@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>USA Employment Data Warehouse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --paper:#E9EEF0; --panel:#FFFFFF; --ink:#152530; --muted:#5C6E79;
+    --line:#D3DCE1; --green:#0B6E4F; --green-soft:#E2F0EA;
+    --red:#A63A3A; --console:#122028; --console-ink:#CFE3D9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font:15px/1.5 "Archivo",system-ui,sans-serif}
+  .mono{font-family:"IBM Plex Mono",monospace}
+  header{padding:26px 24px 10px;max-width:1180px;margin:0 auto}
+  header h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0}
+  header p{color:var(--muted);margin:4px 0 0;font-size:14px}
+  header .src{font-size:12px;color:var(--muted)}
+  main{max-width:1180px;margin:0 auto;padding:0 24px 60px}
+
+  /* filters */
+  .filters{display:flex;flex-wrap:wrap;gap:10px;background:var(--panel);
+           border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:16px}
+  .f{display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px}
+  .f label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .f input,.f select{font:14px "IBM Plex Mono",monospace;padding:8px 9px;border:1px solid var(--line);
+       border-radius:6px;background:#FBFDFD;color:var(--ink);width:100%}
+  .f input:focus,.f select:focus{outline:2px solid var(--green);outline-offset:1px}
+
+  /* signature: live SQL bar */
+  .sqlbar{background:var(--console);color:var(--console-ink);border-radius:10px;
+          margin-top:10px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+  .sqlbar code{flex:1;font:12.5px/1.6 "IBM Plex Mono",monospace;white-space:pre-wrap;word-break:break-word}
+  .sqlbar .kw{color:#7FD1AE;font-weight:600}
+  .sqlbar .lit{color:#EFCB8A}
+  .sqlbar button{background:transparent;border:1px solid #3B5347;color:var(--console-ink);
+      border-radius:6px;padding:6px 10px;font:12px "IBM Plex Mono",monospace;cursor:pointer;white-space:nowrap}
+  .sqlbar button:hover{border-color:#7FD1AE;color:#fff}
+
+  /* KPIs */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:14px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .kpi .v{font:600 26px "IBM Plex Mono",monospace}
+  .kpi .l{font-size:12px;color:var(--muted);margin-top:2px}
+  .kpi.cert .v{color:var(--green)}
+
+  /* charts + table */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .card h2{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+           color:var(--muted);margin:0 0 10px}
+  .card.wide{grid-column:1/-1}
+  canvas{max-height:280px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+     text-align:left;border-bottom:2px solid var(--line);padding:6px 8px}
+  td{border-bottom:1px solid var(--line);padding:6px 8px}
+  td.num{font-family:"IBM Plex Mono",monospace;text-align:right}
+  .status-Certified{color:var(--green);font-weight:600}
+  .status-Denied{color:var(--red);font-weight:600}
+  .tablewrap{overflow-x:auto}
+
+  /* console */
+  .console textarea{width:100%;min-height:96px;background:var(--console);color:var(--console-ink);
+     border:none;border-radius:8px;padding:12px;font:13px/1.6 "IBM Plex Mono",monospace;resize:vertical}
+  .console textarea:focus{outline:2px solid var(--green)}
+  .console .run{margin-top:8px;background:var(--green);color:#fff;border:none;border-radius:7px;
+     padding:9px 18px;font:600 13px "Archivo";cursor:pointer}
+  .console .run:hover{background:#0A5F44}
+  .console .err{color:var(--red);font:13px "IBM Plex Mono",monospace;margin-top:8px;white-space:pre-wrap}
+  #loader{padding:40px;text-align:center;color:var(--muted);font-family:"IBM Plex Mono",monospace}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}.sqlbar{flex-direction:column}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>USA Employment Data Warehouse</h1>
+  <p>H-1B / LCA sponsorship explorer &mdash; every filter below writes real SQL, executed in your browser by DuckDB-WASM.</p>
+  <p class="src">Source: U.S. Dept. of Labor OFLC disclosure data (or bundled sample). No server, no tracking.</p>
+</header>
+<main>
+  <div id="loader">loading warehouse&hellip; (first visit downloads the DuckDB engine, ~5 MB)</div>
+  <div id="app" hidden>
+    <div class="filters">
+      <div class="f"><label for="fTitle">Job title contains</label><input id="fTitle" placeholder="e.g. ENGINEER"></div>
+      <div class="f"><label for="fState">Worksite state</label><select id="fState"><option value="">All</option></select></div>
+      <div class="f"><label for="fCat">Category</label><select id="fCat"><option value="">All</option></select></div>
+      <div class="f"><label for="fYear">Fiscal year</label><select id="fYear"><option value="">All</option></select></div>
+      <div class="f"><label for="fWage">Min annual wage ($)</label><input id="fWage" type="number" step="10000" placeholder="e.g. 170000"></div>
+      <div class="f"><label for="fUni">Employer type</label>
+        <select id="fUni"><option value="">All</option><option value="1">Universities only</option><option value="0">Companies only</option></select></div>
+    </div>
+
+    <div class="sqlbar">
+      <code id="liveSql"></code>
+      <button id="copySql">copy</button>
+      <button id="openSql">open in console &darr;</button>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="kFilings">&ndash;</div><div class="l">filings</div></div>
+      <div class="kpi cert"><div class="v" id="kCert">&ndash;</div><div class="l">certified</div></div>
+      <div class="kpi"><div class="v" id="kMedian">&ndash;</div><div class="l">median wage</div></div>
+      <div class="kpi"><div class="v" id="kEmployers">&ndash;</div><div class="l">employers</div></div>
+    </div>
+
+    <div class="grid">
+      <div class="card"><h2>Top sponsoring employers</h2><canvas id="cEmployers"></canvas></div>
+      <div class="card"><h2>Median wage by state</h2><canvas id="cStates"></canvas></div>
+      <div class="card wide"><h2>Filings by fiscal year</h2><canvas id="cYears"></canvas></div>
+      <div class="card wide">
+        <h2>Highest-paid filings (top 100)</h2>
+        <div class="tablewrap"><table id="tRows"><thead><tr>
+          <th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th>Status</th><th style="text-align:right">Annual wage</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card wide console">
+        <h2>SQL console &mdash; table: <span class="mono">sponsorships</span></h2>
+        <textarea id="sqlIn" spellcheck="false">SELECT employer_name, COUNT(*) AS filings, ROUND(MEDIAN(annual_wage)) AS median_wage
+FROM sponsorships
+WHERE job_category = 'AI/ML'
+GROUP BY 1 ORDER BY filings DESC LIMIT 10;</textarea>
+        <button class="run" id="runSql">Run query</button>
+        <div class="err" id="sqlErr"></div>
+        <div class="tablewrap" style="margin-top:10px"><table id="sqlOut"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.1-dev106.0/+esm";
+
+const $ = id => document.getElementById(id);
+const fmt = n => n == null ? "–" : Number(n).toLocaleString("en-US");
+const money = n => n == null ? "–" : "$" + Number(n).toLocaleString("en-US");
+let conn, charts = {};
+
+async function init() {
+  const bundles = duckdb.getJsDelivrBundles();
+  const bundle = await duckdb.selectBundle(bundles);
+  const workerUrl = URL.createObjectURL(new Blob(
+    [`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" }));
+  const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), new Worker(workerUrl));
+  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  URL.revokeObjectURL(workerUrl);
+
+  const parquetUrl = new URL("data/sponsorships.parquet", location.href).href;
+  await db.registerFileURL("sponsorships.parquet", parquetUrl, duckdb.DuckDBDataProtocol.HTTP, false);
+  conn = await db.connect();
+  await conn.query(`CREATE VIEW sponsorships AS SELECT * FROM read_parquet('sponsorships.parquet')`);
+
+  await populateFilters();
+  wireEvents();
+  await refresh();
+  $("loader").hidden = true;
+  $("app").hidden = false;
+}
+
+const rows = async sql => (await conn.query(sql)).toArray().map(r => r.toJSON());
+
+async function populateFilters() {
+  for (const r of await rows(`SELECT DISTINCT worksite_state s FROM sponsorships WHERE s IS NOT NULL ORDER BY 1`))
+    $("fState").add(new Option(r.s, r.s));
+  for (const r of await rows(`SELECT DISTINCT job_category c FROM sponsorships ORDER BY 1`))
+    $("fCat").add(new Option(r.c, r.c));
+  for (const r of await rows(`SELECT DISTINCT fiscal_year y FROM sponsorships WHERE y IS NOT NULL ORDER BY 1 DESC`))
+    $("fYear").add(new Option(r.y, r.y));
+}
+
+const esc = s => String(s).replace(/'/g, "''");
+
+function whereClause() {
+  const w = [];
+  const t = $("fTitle").value.trim();
+  if (t) w.push(`job_title LIKE '%${esc(t.toUpperCase())}%'`);
+  if ($("fState").value) w.push(`worksite_state = '${esc($("fState").value)}'`);
+  if ($("fCat").value) w.push(`job_category = '${esc($("fCat").value)}'`);
+  if ($("fYear").value) w.push(`fiscal_year = ${Number($("fYear").value)}`);
+  const mw = Number($("fWage").value);
+  if (mw > 0) w.push(`annual_wage >= ${mw}`);
+  if ($("fUni").value === "1") w.push(`is_university`);
+  if ($("fUni").value === "0") w.push(`NOT is_university`);
+  return w.length ? "WHERE " + w.join("\n  AND ") : "";
+}
+
+function renderLiveSql(where) {
+  const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY annual_wage DESC LIMIT 100;`;
+  $("liveSql").innerHTML = sql
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/\b(SELECT|FROM|WHERE|AND|ORDER BY|LIMIT|NOT|LIKE)\b/g, '<span class="kw">$1</span>')
+    .replace(/('[^']*'|\b\d{4,}\b)/g, '<span class="lit">$1</span>');
+  return sql;
+}
+
+function drawChart(id, type, labels, data, opts = {}) {
+  charts[id]?.destroy();
+  charts[id] = new Chart($(id), {
+    type,
+    data: { labels, datasets: [{ data, backgroundColor: "#0B6E4F", borderColor: "#0B6E4F",
+             borderRadius: 3, tension: .25, fill: false, pointRadius: 3 }] },
+    options: { plugins: { legend: { display: false } },
+      indexAxis: opts.horizontal ? "y" : "x",
+      scales: { x: { grid: { display: false } }, y: { grid: { color: "#E4EAED" } } } }
+  });
+}
+
+async function refresh() {
+  const where = whereClause();
+  const sql = renderLiveSql(where);
+
+  const [k] = await rows(`SELECT COUNT(*) filings,
+      ROUND(100.0 * COUNT(*) FILTER (case_status ILIKE 'Certified%') / NULLIF(COUNT(*),0), 1) cert,
+      ROUND(MEDIAN(annual_wage)) med, COUNT(DISTINCT employer_name) emps
+      FROM sponsorships ${where}`);
+  $("kFilings").textContent = fmt(k.filings);
+  $("kCert").textContent = k.cert == null ? "–" : k.cert + "%";
+  $("kMedian").textContent = money(k.med);
+  $("kEmployers").textContent = fmt(k.emps);
+
+  const emp = await rows(`SELECT employer_name e, COUNT(*) n FROM sponsorships ${where}
+                          GROUP BY 1 ORDER BY n DESC LIMIT 10`);
+  drawChart("cEmployers", "bar", emp.map(r => r.e.length > 26 ? r.e.slice(0,25) + "…" : r.e),
+            emp.map(r => Number(r.n)), { horizontal: true });
+
+  const st = await rows(`SELECT worksite_state s, MEDIAN(annual_wage) m FROM sponsorships ${where}
+                         GROUP BY 1 HAVING COUNT(*) >= 3 ORDER BY m DESC LIMIT 12`);
+  drawChart("cStates", "bar", st.map(r => r.s), st.map(r => Math.round(Number(r.m))));
+
+  const yr = await rows(`SELECT fiscal_year y, COUNT(*) n FROM sponsorships ${where}
+                         GROUP BY 1 HAVING y IS NOT NULL ORDER BY 1`);
+  drawChart("cYears", "line", yr.map(r => r.y), yr.map(r => Number(r.n)));
+
+  const tbody = $("tRows").querySelector("tbody");
+  tbody.innerHTML = "";
+  for (const r of await rows(sql.replace(/;$/, ""))) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.employer_name ?? ""}</td><td>${r.job_title ?? ""}</td>
+      <td>${r.worksite_city ?? ""}</td><td>${r.worksite_state ?? ""}</td>
+      <td class="num">${r.fiscal_year ?? ""}</td>
+      <td class="status-${String(r.case_status).split(" ")[0]}">${r.case_status ?? ""}</td>
+      <td class="num">${money(r.annual_wage)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function runConsole() {
+  $("sqlErr").textContent = "";
+  const head = $("sqlOut").querySelector("thead"), body = $("sqlOut").querySelector("tbody");
+  head.innerHTML = body.innerHTML = "";
+  try {
+    const out = await rows($("sqlIn").value);
+    if (!out.length) { $("sqlErr").textContent = "0 rows."; return; }
+    const cols = Object.keys(out[0]);
+    head.innerHTML = "<tr>" + cols.map(c => `<th>${c}</th>`).join("") + "</tr>";
+    for (const r of out.slice(0, 500)) {
+      body.insertAdjacentHTML("beforeend",
+        "<tr>" + cols.map(c => `<td class="${typeof r[c] === "number" || typeof r[c] === "bigint" ? "num" : ""}">${r[c] ?? ""}</td>`).join("") + "</tr>");
+    }
+  } catch (e) { $("sqlErr").textContent = e.message; }
+}
+
+function wireEvents() {
+  let t;
+  const bounce = () => { clearTimeout(t); t = setTimeout(refresh, 250); };
+  for (const id of ["fTitle", "fWage"]) $(id).addEventListener("input", bounce);
+  for (const id of ["fState", "fCat", "fYear", "fUni"]) $(id).addEventListener("change", refresh);
+  $("copySql").onclick = () => navigator.clipboard.writeText($("liveSql").textContent);
+  $("openSql").onclick = () => { $("sqlIn").value = $("liveSql").textContent;
+                                 $("sqlIn").scrollIntoView({ behavior: "smooth" }); };
+  $("runSql").onclick = runConsole;
+}
+
+init().catch(e => { $("loader").textContent = "Failed to load warehouse: " + e.message; });
+</script>
+</body>
+</html>

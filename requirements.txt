@@ -1,0 +1,10 @@
+duckdb>=1.0
+pandas>=2.0
+pyarrow
+requests
+pyyaml
+openpyxl
+fastapi
+uvicorn[standard]
+pytest
+httpx
