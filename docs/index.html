@@ -102,6 +102,13 @@
       <div class="f"><label for="fWage">Min annual wage ($)</label><input id="fWage" type="number" step="10000" placeholder="e.g. 170000"></div>
       <div class="f"><label for="fUni">Employer type</label>
         <select id="fUni"><option value="">All</option><option value="1">Universities only</option><option value="0">Companies only</option></select></div>
+      <div class="f"><label for="fSort">Sort results by</label>
+        <select id="fSort">
+          <option value="wage_desc">Wage: high &rarr; low</option>
+          <option value="wage_asc">Wage: low &rarr; high</option>
+          <option value="year_desc">Year: newest first</option>
+          <option value="emp_asc">Employer: A &rarr; Z</option>
+        </select></div>
     </div>
 
     <div class="sqlbar">
@@ -133,6 +140,12 @@
         <div class="tablewrap"><table id="tRows"><thead><tr>
           <th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th>Status</th><th style="text-align:right">Annual wage</th>
         </tr></thead><tbody></tbody></table></div>
+        <div class="toolbar" style="margin:10px 0 0">
+          <span id="pageInfo2" class="mono" style="color:var(--muted);font-size:12px"></span>
+          <span style="flex:1"></span>
+          <button id="prevPg2" class="tbtn">&larr; Prev</button>
+          <button id="nextPg2" class="tbtn">Next &rarr;</button>
+        </div>
       </div>
       <div class="card wide console">
         <h2>SQL console &mdash; table: <span class="mono">sponsorships</span></h2>
@@ -209,8 +222,16 @@ function whereClause() {
   return w.length ? "WHERE " + w.join("\n  AND ") : "";
 }
 
+const ORDERS = {
+  wage_desc: "annual_wage DESC NULLS LAST",
+  wage_asc:  "annual_wage ASC NULLS LAST",
+  year_desc: "fiscal_year DESC, annual_wage DESC NULLS LAST",
+  emp_asc:   "employer_name ASC, annual_wage DESC NULLS LAST",
+};
+const orderClause = () => ORDERS[$("fSort").value] || ORDERS.wage_desc;
+
 function renderLiveSql(where) {
-  const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY annual_wage DESC LIMIT 2000;`;
+  const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY ${orderClause()} LIMIT 2000;`;
   $("liveSql").innerHTML = sql
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/\b(SELECT|FROM|WHERE|AND|ORDER BY|LIMIT|NOT|ILIKE|LIKE)\b/g, '<span class="kw">$1</span>')
@@ -278,9 +299,11 @@ function renderTable() {
     tbody.appendChild(tr);
   }
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE_SIZE));
-  $("pageInfo").textContent = `Page ${page + 1} of ${pages} \u00B7 ${fmt(tableRows.length)} rows`;
-  $("prevPg").disabled = page === 0;
-  $("nextPg").disabled = page >= pages - 1;
+  const info = `Page ${page + 1} of ${pages} \u00B7 ${fmt(tableRows.length)} rows`;
+  $("pageInfo").textContent = info;
+  $("pageInfo2").textContent = info;
+  for (const id of ["prevPg", "prevPg2"]) $(id).disabled = page === 0;
+  for (const id of ["nextPg", "nextPg2"]) $(id).disabled = page >= pages - 1;
 }
 
 async function downloadCsv() {
@@ -291,7 +314,7 @@ async function downloadCsv() {
         worksite_city, worksite_state, fiscal_year, visa_class, case_status,
         annual_wage, prevailing_wage, is_university
       FROM sponsorships ${whereClause()}
-      ORDER BY annual_wage DESC NULLS LAST LIMIT 100000`);
+      ORDER BY ${orderClause()} LIMIT 100000`);
     if (!data.length) return;
     const cols = Object.keys(data[0]);
     const csvEsc = v => v == null ? "" :
@@ -329,7 +352,7 @@ function wireEvents() {
   let t;
   const bounce = () => { clearTimeout(t); t = setTimeout(refresh, 250); };
   for (const id of ["fEmp", "fTitle", "fWage"]) $(id).addEventListener("input", bounce);
-  for (const id of ["fState", "fCat", "fYear", "fUni"]) $(id).addEventListener("change", refresh);
+  for (const id of ["fState", "fCat", "fYear", "fUni", "fSort"]) $(id).addEventListener("change", refresh);
   $("copySql").onclick = () => navigator.clipboard.writeText($("liveSql").textContent);
   $("openSql").onclick = () => { $("sqlIn").value = $("liveSql").textContent;
                                  $("sqlIn").scrollIntoView({ behavior: "smooth" }); };
@@ -337,6 +360,10 @@ function wireEvents() {
   $("dlCsv").onclick = downloadCsv;
   $("prevPg").onclick = () => { page--; renderTable(); };
   $("nextPg").onclick = () => { page++; renderTable(); };
+  const flip = d => { page += d; renderTable();
+                      $("tRows").scrollIntoView({ block: "start", behavior: "smooth" }); };
+  $("prevPg2").onclick = () => flip(-1);
+  $("nextPg2").onclick = () => flip(1);
 }
 
 init().catch(e => { $("loader").textContent = "Failed to load warehouse: " + e.message; });
