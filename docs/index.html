@@ -23,14 +23,27 @@
   header .src{font-size:12px;color:var(--muted)}
   main{max-width:1180px;margin:0 auto;padding:0 24px 60px}
 
-  /* filters */
-  .filters{display:flex;flex-wrap:wrap;gap:10px;background:var(--panel);
-           border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:16px}
-  .f{display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px}
-  .f label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  /* layout: Amazon-style left filter rail */
+  .layout{display:grid;grid-template-columns:248px minmax(0,1fr);gap:16px;align-items:start;margin-top:16px}
+  .content{min-width:0}
+  .filters{display:flex;flex-direction:column;gap:12px;background:var(--panel);
+           border:1px solid var(--line);border-radius:10px;padding:14px;
+           position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto}
+  .fhead{display:flex;justify-content:space-between;align-items:center;
+         font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .f{display:flex;flex-direction:column;gap:4px}
+  .f label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+           cursor:help;width:fit-content;border-bottom:1px dotted var(--line)}
   .f input,.f select{font:14px "IBM Plex Mono",monospace;padding:8px 9px;border:1px solid var(--line);
        border-radius:6px;background:#FBFDFD;color:var(--ink);width:100%}
   .f input:focus,.f select:focus{outline:2px solid var(--green);outline-offset:1px}
+  details.more{border-top:1px solid var(--line);padding-top:10px}
+  details.more summary{cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.06em;
+       text-transform:uppercase;color:var(--green);list-style:none;user-select:none}
+  details.more summary::before{content:"+ "}
+  details.more[open] summary::before{content:"\2212 "}
+  details.more .f{margin-top:10px}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}.filters{position:static;max-height:none}}
 
   /* signature: live SQL bar */
   .sqlbar{background:var(--console);color:var(--console-ink);border-radius:10px;
@@ -93,16 +106,29 @@
 <main>
   <div id="loader">loading warehouse&hellip; (first visit downloads the DuckDB engine, ~5 MB)</div>
   <div id="app" hidden>
-    <div class="filters">
-      <div class="f"><label for="fEmp">Employer contains</label><input id="fEmp" list="empList" placeholder="e.g. ORACLE"><datalist id="empList"></datalist></div>
-      <div class="f"><label for="fTitle">Job title contains</label><input id="fTitle" list="titleList" placeholder="e.g. ENGINEER"><datalist id="titleList"></datalist></div>
-      <div class="f"><label for="fState">Worksite state</label><select id="fState"><option value="">All</option></select></div>
-      <div class="f"><label for="fCat">Category</label><select id="fCat"><option value="">All</option></select></div>
-      <div class="f"><label for="fYear">Fiscal year</label><select id="fYear"><option value="">All</option></select></div>
-      <div class="f"><label for="fWage">Min annual wage ($)</label><input id="fWage" type="number" step="10000" placeholder="e.g. 170000"></div>
-      <div class="f"><label for="fUni">Employer type</label>
-        <select id="fUni"><option value="">All</option><option value="1">Universities only</option><option value="0">Companies only</option></select></div>
-      <div class="f"><label for="fSort">Sort results by</label>
+   <div class="layout">
+    <aside class="filters">
+      <div class="fhead"><span>Filters</span><button id="clearF" class="tbtn">&#10005; Clear</button></div>
+      <div class="f"><label for="fEmp" title="Search sponsors by company name. Partial match: typing 'oracle' finds Oracle America, Inc. Suggestions appear as you type.">Employer contains</label><input id="fEmp" list="empList" placeholder="e.g. ORACLE" title="Type part of a company name; top-3 suggestions appear"><datalist id="empList"></datalist></div>
+      <div class="f"><label for="fTitle" title="Search by the job title on the filing, e.g. SOFTWARE ENGINEER, DATA ANALYST. Partial match with suggestions.">Job title contains</label><input id="fTitle" list="titleList" placeholder="e.g. ENGINEER" title="Type part of a job title; top-3 suggestions appear"><datalist id="titleList"></datalist></div>
+      <div class="f"><label for="fState" title="The U.S. state where the sponsored employee will actually work (not the company HQ).">Worksite state</label><select id="fState"><option value="">All</option></select></div>
+      <div class="f"><label for="fYear" title="U.S. federal fiscal year of the filing (Oct 1 - Sep 30). FY2025 = Oct 2024 to Sep 2025.">Fiscal year</label><select id="fYear"><option value="">All</option></select></div>
+      <div class="f"><label for="fWage" title="Show only filings with an offered annual salary at or above this amount (USD).">Min annual wage ($)</label><input id="fWage" type="number" step="10000" placeholder="e.g. 170000"></div>
+
+      <details class="more">
+        <summary>More filters</summary>
+        <div class="f"><label for="fCat" title="Broad role grouping derived from the job title: Software, Data, AI/ML, Other IT, etc.">Category</label><select id="fCat"><option value="">All</option></select></div>
+        <div class="f"><label for="fUni" title="Universities are cap-exempt H-1B sponsors; filter to schools only or companies only.">Employer type</label>
+          <select id="fUni"><option value="">All</option><option value="1">Universities only</option><option value="0">Companies only</option></select></div>
+        <div class="f"><label for="fVisa" title="Visa program of the filing: H-1B, H-1B1 (Chile/Singapore), or E-3 (Australia).">Visa class</label><select id="fVisa"><option value="">All</option></select></div>
+        <div class="f"><label for="fStatus" title="Outcome of the case: Certified = approved by DOL; Denied; Withdrawn.">Status</label>
+          <select id="fStatus"><option value="">All</option><option value="cert">Certified only</option><option value="den">Denied only</option></select></div>
+        <div class="f"><label for="fCountry" title="DOL LCA data covers U.S. worksites only; more countries can be added with future datasets.">Country</label>
+          <select id="fCountry"><option value="US" selected>United States</option></select></div>
+      </details>
+
+      <div class="fhead" style="margin-top:14px"><span>Display</span></div>
+      <div class="f"><label for="fSort" title="Order of the results table and CSV download.">Sort results by</label>
         <select id="fSort">
           <option value="wage_desc">Wage: high &rarr; low</option>
           <option value="wage_asc">Wage: low &rarr; high</option>
@@ -110,19 +136,14 @@
           <option value="year_desc">Year: newest first</option>
           <option value="emp_asc">Employer: A &rarr; Z</option>
         </select></div>
-      <div class="f"><label for="fCountry">Country</label>
-        <select id="fCountry"><option value="US" selected>United States</option></select></div>
-      <div class="f"><label for="fVisa">Visa class</label><select id="fVisa"><option value="">All</option></select></div>
-      <div class="f"><label for="fStatus">Status</label>
-        <select id="fStatus"><option value="">All</option><option value="cert">Certified only</option><option value="den">Denied only</option></select></div>
-      <div class="f"><label for="fView">View</label>
+      <div class="f"><label for="fView" title="Individual filings = one row per LCA case. Grouped = one row per employer + role + city + year with approved counts and median wage.">View</label>
         <select id="fView">
           <option value="rows">Individual filings</option>
           <option value="grouped">Approved workers by employer &times; role &times; city</option>
         </select></div>
-      <div class="f"><label>&nbsp;</label><button id="clearF" class="tbtn" style="padding:8px 12px">&#10005; Clear filters</button></div>
-    </div>
+    </aside>
 
+    <div class="content">
     <div class="sqlbar">
       <code id="liveSql"></code>
       <button id="copySql">copy</button>
@@ -168,6 +189,8 @@ GROUP BY 1 ORDER BY filings DESC LIMIT 10;</textarea>
         <div class="tablewrap" style="margin-top:10px"><table id="sqlOut"><thead></thead><tbody></tbody></table></div>
       </div>
     </div>
+    </div><!-- /content -->
+   </div><!-- /layout -->
   </div>
 </main>
 
