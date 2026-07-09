@@ -44,40 +44,44 @@ def load_config() -> dict:
 
 def download_file(url: str, dest: Path, chunk: int = 1 << 20, min_mb: float = 2.0) -> bool:
     """Stream a (potentially large) file to disk. Skips if already present.
-    Retries twice; rejects suspiciously small responses (soft-404 HTML pages).
-    Appends outcome to download_log.txt for post-run diagnosis."""
+    Tries dol.gov directly (3 attempts), then falls back to the Internet
+    Archive's copy of the same public file (DOL's CDN sometimes blocks
+    datacenter IPs like CI runners). Outcomes go to download_log.txt."""
     log = dest.parent / "download_log.txt"
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and dest.stat().st_size > min_mb * 1e6:
         print(f"  skip (exists): {dest.name}")
         return True
     tmp = dest.with_suffix(dest.suffix + ".part")
-    last_err = ""
-    for attempt in range(1, 4):
-        try:
-            with requests.get(url, stream=True, timeout=(30, 300),
-                              headers={"User-Agent": "Mozilla/5.0 (research ETL)"}) as r:
-                r.raise_for_status()
-                with open(tmp, "wb") as f:
-                    for block in r.iter_content(chunk_size=chunk):
-                        f.write(block)
-            size_mb = tmp.stat().st_size / 1e6
-            if size_mb < min_mb:
-                last_err = f"too small ({size_mb:.2f} MB) - likely an error page"
+    candidates = [url, f"https://web.archive.org/web/2026id_/{url}"]
+    errors = []
+    for cand in candidates:
+        attempts = 3 if cand == url else 2
+        for attempt in range(1, attempts + 1):
+            try:
+                with requests.get(cand, stream=True, timeout=(30, 600),
+                                  headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) research-ETL"}) as r:
+                    r.raise_for_status()
+                    with open(tmp, "wb") as f:
+                        for block in r.iter_content(chunk_size=chunk):
+                            f.write(block)
+                size_mb = tmp.stat().st_size / 1e6
+                if size_mb < min_mb:
+                    errors.append(f"{cand} -> too small ({size_mb:.2f} MB, likely error page)")
+                    tmp.unlink(missing_ok=True)
+                    break  # soft-404; try next candidate, not same URL again
+                tmp.rename(dest)
+                via = "direct" if cand == url else "archive.org mirror"
+                print(f"  ok ({via}): {dest.name} ({size_mb:.1f} MB)")
+                with open(log, "a") as lf:
+                    lf.write(f"OK   {dest.name} {size_mb:.1f}MB via {via}\n")
+                return True
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{cand} attempt {attempt}: {type(exc).__name__}: {exc}")
                 tmp.unlink(missing_ok=True)
-                break  # not a transient failure; don't retry
-            tmp.rename(dest)
-            print(f"  ok: {dest.name} ({size_mb:.1f} MB)")
-            with open(log, "a") as lf:
-                lf.write(f"OK   {dest.name} {size_mb:.1f}MB {url}\n")
-            return True
-        except Exception as exc:  # noqa: BLE001
-            last_err = f"attempt {attempt}: {exc}"
-            print(f"  retryable failure {url}: {exc}", file=sys.stderr)
-            tmp.unlink(missing_ok=True)
-    print(f"  FAILED {url}: {last_err}", file=sys.stderr)
+    print(f"  FAILED {dest.name}: {' | '.join(errors[-2:])}", file=sys.stderr)
     with open(log, "a") as lf:
-        lf.write(f"FAIL {dest.name} {last_err} {url}\n")
+        lf.write(f"FAIL {dest.name}\n" + "".join(f"     {e}\n" for e in errors))
     return False
 
 

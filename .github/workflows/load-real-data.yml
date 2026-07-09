@@ -27,6 +27,7 @@ jobs:
           python -m etl.load
           python -m etl.export
       - name: Write manifest for diagnostics
+        if: always()
         run: |
           {
             echo "== run $(date -u) =="
@@ -34,10 +35,11 @@ jobs:
             echo "== files on disk =="
             ls -lh data/raw/lca/ || true
             echo "== rows by source file =="
-            python -c "import duckdb; [print(r) for r in duckdb.connect('data/warehouse.duckdb').execute('SELECT source_file, COUNT(*) FROM lca_filings GROUP BY 1').fetchall()]"
+            python -c "import duckdb; [print(r) for r in duckdb.connect('data/warehouse.duckdb').execute('SELECT source_file, COUNT(*) FROM lca_filings GROUP BY 1').fetchall()]" 2>/dev/null || echo "no warehouse built"
           } > docs/data/manifest.txt
           cat docs/data/manifest.txt
       - name: Commit refreshed data
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
