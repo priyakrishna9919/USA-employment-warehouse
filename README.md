@@ -1,5 +1,7 @@
 # USA Employment Data Warehouse
 
+**🔴 Live dashboard: https://priyakrishna9919.github.io/USA-employment-warehouse/**
+
 A SQL-queryable warehouse of public U.S. employment and visa-sponsorship data, built on DOL OFLC H-1B/LCA disclosure data, with an ETL pipeline, analytical query library, and REST API.
 
 Answers questions like: *Which companies sponsored AI Engineers in California above $170K? Which universities sponsor Software Engineers? Which employers are increasing sponsorship year over year?*
@@ -57,7 +59,7 @@ The pipeline is **idempotent** — re-running a file upserts on `case_number`, s
 `docs/index.html` is a self-contained dashboard: **DuckDB-WASM runs SQL in your browser** against `docs/data/sponsorships.parquet`. Filters write a live SQL statement you can copy or open in the built-in SQL console.
 
 Local preview: `make dashboard` then open http://localhost:8080
-Publish: push to GitHub, then **Settings → Pages → Deploy from a branch → main → /docs**. Your dashboard goes live at `https://<user>.github.io/<repo>/`.
+Publish: push to GitHub, then **Settings → Pages → Deploy from a branch → main → /docs**. The dashboard is live at https://priyakrishna9919.github.io/USA-employment-warehouse/
 
 After loading real DOL data, run `python -m etl.export` and commit the refreshed parquet.
 
