@@ -64,6 +64,12 @@
   .status-Certified{color:var(--green);font-weight:600}
   .status-Denied{color:var(--red);font-weight:600}
   .tablewrap{overflow-x:auto}
+  .toolbar{display:flex;gap:10px;align-items:center;margin:0 0 10px}
+  .tbtn{background:#FBFDFD;border:1px solid var(--line);border-radius:7px;color:var(--ink);
+        padding:7px 12px;font:600 12.5px "Archivo";cursor:pointer}
+  .tbtn:hover{border-color:var(--green);color:var(--green)}
+  .tbtn:disabled{opacity:.4;cursor:default}
+  #dlCsv{background:var(--green-soft);border-color:var(--green);color:var(--green)}
 
   /* console */
   .console textarea{width:100%;min-height:96px;background:var(--console);color:var(--console-ink);
@@ -115,7 +121,14 @@
       <div class="card"><h2>Median wage by state</h2><canvas id="cStates"></canvas></div>
       <div class="card wide"><h2>Filings by fiscal year</h2><canvas id="cYears"></canvas></div>
       <div class="card wide">
-        <h2>Highest-paid filings (top 500)</h2>
+        <h2>Filtered filings</h2>
+        <div class="toolbar">
+          <button id="dlCsv" class="tbtn">&#8681; Download CSV (Excel)</button>
+          <span id="pageInfo" class="mono" style="color:var(--muted);font-size:12px"></span>
+          <span style="flex:1"></span>
+          <button id="prevPg" class="tbtn">&larr; Prev</button>
+          <button id="nextPg" class="tbtn">Next &rarr;</button>
+        </div>
         <div class="tablewrap"><table id="tRows"><thead><tr>
           <th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th>Status</th><th style="text-align:right">Annual wage</th>
         </tr></thead><tbody></tbody></table></div>
@@ -191,7 +204,7 @@ function whereClause() {
 }
 
 function renderLiveSql(where) {
-  const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY annual_wage DESC LIMIT 500;`;
+  const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY annual_wage DESC LIMIT 2000;`;
   $("liveSql").innerHTML = sql
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/\b(SELECT|FROM|WHERE|AND|ORDER BY|LIMIT|NOT|LIKE)\b/g, '<span class="kw">$1</span>')
@@ -237,9 +250,19 @@ async function refresh() {
                          GROUP BY 1 HAVING y IS NOT NULL ORDER BY 1`);
   drawChart("cYears", "line", yr.map(r => r.y), yr.map(r => Number(r.n)));
 
+  tableRows = await rows(sql.replace(/;$/, ""));
+  page = 0;
+  renderTable();
+}
+
+let tableRows = [], page = 0;
+const PAGE_SIZE = 50;
+
+function renderTable() {
   const tbody = $("tRows").querySelector("tbody");
   tbody.innerHTML = "";
-  for (const r of await rows(sql.replace(/;$/, ""))) {
+  const start = page * PAGE_SIZE;
+  for (const r of tableRows.slice(start, start + PAGE_SIZE)) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${r.employer_name ?? ""}</td><td>${r.job_title ?? ""}</td>
       <td>${r.worksite_city ?? ""}</td><td>${r.worksite_state ?? ""}</td>
@@ -247,6 +270,36 @@ async function refresh() {
       <td class="status-${String(r.case_status).split(" ")[0]}">${r.case_status ?? ""}</td>
       <td class="num">${money(r.annual_wage)}</td>`;
     tbody.appendChild(tr);
+  }
+  const pages = Math.max(1, Math.ceil(tableRows.length / PAGE_SIZE));
+  $("pageInfo").textContent = `Page ${page + 1} of ${pages} \u00B7 ${fmt(tableRows.length)} rows`;
+  $("prevPg").disabled = page === 0;
+  $("nextPg").disabled = page >= pages - 1;
+}
+
+async function downloadCsv() {
+  const btn = $("dlCsv");
+  btn.disabled = true; btn.textContent = "preparing\u2026";
+  try {
+    const data = await rows(`SELECT employer_name, job_title, job_category, soc_code, soc_title,
+        worksite_city, worksite_state, fiscal_year, visa_class, case_status,
+        annual_wage, prevailing_wage, is_university
+      FROM sponsorships ${whereClause()}
+      ORDER BY annual_wage DESC NULLS LAST LIMIT 100000`);
+    if (!data.length) return;
+    const cols = Object.keys(data[0]);
+    const csvEsc = v => v == null ? "" :
+      /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+    const csv = [cols.join(",")]
+      .concat(data.map(r => cols.map(c => csvEsc(r[c])).join(",")))
+      .join("\r\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }));
+    a.download = "sponsorships_filtered.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } finally {
+    btn.disabled = false; btn.textContent = "\u21E9 Download CSV (Excel)";
   }
 }
 
@@ -275,6 +328,9 @@ function wireEvents() {
   $("openSql").onclick = () => { $("sqlIn").value = $("liveSql").textContent;
                                  $("sqlIn").scrollIntoView({ behavior: "smooth" }); };
   $("runSql").onclick = runConsole;
+  $("dlCsv").onclick = downloadCsv;
+  $("prevPg").onclick = () => { page--; renderTable(); };
+  $("nextPg").onclick = () => { page++; renderTable(); };
 }
 
 init().catch(e => { $("loader").textContent = "Failed to load warehouse: " + e.message; });
