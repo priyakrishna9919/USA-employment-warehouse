@@ -1,4 +1,4 @@
-== run Thu Jul  9 19:32:28 UTC 2026 ==
+== run Thu Jul  9 19:46:24 UTC 2026 ==
 OK   LCA_Disclosure_Data_FY2025_Q4.xlsx 79.1MB via release asset
 OK   LCA_Disclosure_Data_FY2026_Q1.xlsx 75.6MB via archive.org mirror (may be truncated!)
 FAIL LCA_Disclosure_Data_FY2026_Q2.xlsx
@@ -17,9 +17,9 @@ FAIL LCA_Disclosure_Data_FY2026_Q2.xlsx
      https://web.archive.org/web/2026id_/https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs/LCA_Disclosure_Data_FY2026_Q2.xlsx attempt 1: HTTPError: 404 Client Error: NOT FOUND for url: https://web.archive.org/web/2026id_/https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs/LCA_Disclosure_Data_FY2026_Q2.xlsx
 == files on disk ==
 total 148M
--rw-r--r-- 1 runner runner  76M Jul  9 19:31 LCA_Disclosure_Data_FY2025_Q4.xlsx
--rw-r--r-- 1 runner runner  73M Jul  9 19:31 LCA_Disclosure_Data_FY2026_Q1.xlsx
--rw-r--r-- 1 runner runner 3.5K Jul  9 19:31 download_log.txt
+-rw-r--r-- 1 runner runner  76M Jul  9 19:45 LCA_Disclosure_Data_FY2025_Q4.xlsx
+-rw-r--r-- 1 runner runner  73M Jul  9 19:45 LCA_Disclosure_Data_FY2026_Q1.xlsx
+-rw-r--r-- 1 runner runner 3.5K Jul  9 19:45 download_log.txt
 == rows by source file ==
-('LCA_Disclosure_Data_FY2025_Q4.xlsx', 117934)
 ('LCA_Disclosure_Data_FY2026_Q1.xlsx', 83120)
+('LCA_Disclosure_Data_FY2025_Q4.xlsx', 117934)
