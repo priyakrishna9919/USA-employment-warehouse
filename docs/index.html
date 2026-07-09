@@ -165,7 +165,10 @@ async function init() {
   URL.revokeObjectURL(workerUrl);
 
   const parquetUrl = new URL("data/sponsorships.parquet", location.href).href;
-  await db.registerFileURL("sponsorships.parquet", parquetUrl, duckdb.DuckDBDataProtocol.HTTP, false);
+  const resp = await fetch(parquetUrl);
+  if (!resp.ok) throw new Error(`could not fetch data file (HTTP ${resp.status})`);
+  const buf = new Uint8Array(await resp.arrayBuffer());
+  await db.registerFileBuffer("sponsorships.parquet", buf);
   conn = await db.connect();
   await conn.query(`CREATE VIEW sponsorships AS SELECT * FROM read_parquet('sponsorships.parquet')`);
 
