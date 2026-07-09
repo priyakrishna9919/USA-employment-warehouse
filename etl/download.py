@@ -53,10 +53,12 @@ def download_file(url: str, dest: Path, chunk: int = 1 << 20, min_mb: float = 2.
         print(f"  skip (exists): {dest.name}")
         return True
     tmp = dest.with_suffix(dest.suffix + ".part")
-    candidates = [url, f"https://web.archive.org/web/2026id_/{url}"]
+    release_url = ("https://github.com/priyakrishna9919/USA-employment-warehouse"
+                   f"/releases/download/data-drop/{dest.name}")
+    candidates = [release_url, url, f"https://web.archive.org/web/2026id_/{url}"]
     errors = []
     for cand in candidates:
-        attempts = 3 if cand == url else 2
+        attempts = 3 if cand == url else 1 if "archive.org" in cand else 2
         for attempt in range(1, attempts + 1):
             try:
                 with requests.get(cand, stream=True, timeout=(30, 600),
@@ -71,7 +73,7 @@ def download_file(url: str, dest: Path, chunk: int = 1 << 20, min_mb: float = 2.
                     tmp.unlink(missing_ok=True)
                     break  # soft-404; try next candidate, not same URL again
                 tmp.rename(dest)
-                via = "direct" if cand == url else "archive.org mirror"
+                via = "direct" if cand == url else ("release asset" if "releases" in cand else "archive.org mirror (may be truncated!)")
                 print(f"  ok ({via}): {dest.name} ({size_mb:.1f} MB)")
                 with open(log, "a") as lf:
                     lf.write(f"OK   {dest.name} {size_mb:.1f}MB via {via}\n")
