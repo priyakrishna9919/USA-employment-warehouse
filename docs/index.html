@@ -115,7 +115,7 @@
       <div class="card"><h2>Median wage by state</h2><canvas id="cStates"></canvas></div>
       <div class="card wide"><h2>Filings by fiscal year</h2><canvas id="cYears"></canvas></div>
       <div class="card wide">
-        <h2>Highest-paid filings (top 100)</h2>
+        <h2>Highest-paid filings (top 500)</h2>
         <div class="tablewrap"><table id="tRows"><thead><tr>
           <th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th>Status</th><th style="text-align:right">Annual wage</th>
         </tr></thead><tbody></tbody></table></div>
@@ -191,7 +191,7 @@ function whereClause() {
 }
 
 function renderLiveSql(where) {
-  const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY annual_wage DESC LIMIT 100;`;
+  const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY annual_wage DESC LIMIT 500;`;
   $("liveSql").innerHTML = sql
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/\b(SELECT|FROM|WHERE|AND|ORDER BY|LIMIT|NOT|LIKE)\b/g, '<span class="kw">$1</span>')
