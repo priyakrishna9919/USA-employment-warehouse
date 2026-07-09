@@ -94,8 +94,8 @@
   <div id="loader">loading warehouse&hellip; (first visit downloads the DuckDB engine, ~5 MB)</div>
   <div id="app" hidden>
     <div class="filters">
-      <div class="f"><label for="fEmp">Employer contains</label><input id="fEmp" placeholder="e.g. ORACLE"></div>
-      <div class="f"><label for="fTitle">Job title contains</label><input id="fTitle" placeholder="e.g. ENGINEER"></div>
+      <div class="f"><label for="fEmp">Employer contains</label><input id="fEmp" list="empList" placeholder="e.g. ORACLE"><datalist id="empList"></datalist></div>
+      <div class="f"><label for="fTitle">Job title contains</label><input id="fTitle" list="titleList" placeholder="e.g. ENGINEER"><datalist id="titleList"></datalist></div>
       <div class="f"><label for="fState">Worksite state</label><select id="fState"><option value="">All</option></select></div>
       <div class="f"><label for="fCat">Category</label><select id="fCat"><option value="">All</option></select></div>
       <div class="f"><label for="fYear">Fiscal year</label><select id="fYear"><option value="">All</option></select></div>
@@ -348,10 +348,21 @@ async function runConsole() {
   } catch (e) { $("sqlErr").textContent = e.message; }
 }
 
+async function suggest(inputId, listId, column) {
+  const v = $(inputId).value.trim();
+  if (v.length < 2) { $(listId).innerHTML = ""; return; }
+  const opts = await rows(`SELECT ${column} AS v, COUNT(*) AS n FROM sponsorships
+      WHERE ${column} ILIKE '%${esc(v)}%' GROUP BY 1 ORDER BY n DESC LIMIT 3`);
+  $(listId).innerHTML = opts
+    .map(o => `<option value="${String(o.v).replace(/"/g, "&quot;")}"></option>`).join("");
+}
+
 function wireEvents() {
   let t;
   const bounce = () => { clearTimeout(t); t = setTimeout(refresh, 250); };
-  for (const id of ["fEmp", "fTitle", "fWage"]) $(id).addEventListener("input", bounce);
+  $("fEmp").addEventListener("input", () => { suggest("fEmp", "empList", "employer_name"); bounce(); });
+  $("fTitle").addEventListener("input", () => { suggest("fTitle", "titleList", "job_title"); bounce(); });
+  $("fWage").addEventListener("input", bounce);
   for (const id of ["fState", "fCat", "fYear", "fUni", "fSort"]) $(id).addEventListener("change", refresh);
   $("copySql").onclick = () => navigator.clipboard.writeText($("liveSql").textContent);
   $("openSql").onclick = () => { $("sqlIn").value = $("liveSql").textContent;
