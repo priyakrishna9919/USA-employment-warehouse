@@ -94,6 +94,7 @@
   <div id="loader">loading warehouse&hellip; (first visit downloads the DuckDB engine, ~5 MB)</div>
   <div id="app" hidden>
     <div class="filters">
+      <div class="f"><label for="fEmp">Employer contains</label><input id="fEmp" placeholder="e.g. ORACLE"></div>
       <div class="f"><label for="fTitle">Job title contains</label><input id="fTitle" placeholder="e.g. ENGINEER"></div>
       <div class="f"><label for="fState">Worksite state</label><select id="fState"><option value="">All</option></select></div>
       <div class="f"><label for="fCat">Category</label><select id="fCat"><option value="">All</option></select></div>
@@ -194,6 +195,8 @@ const esc = s => String(s).replace(/'/g, "''");
 
 function whereClause() {
   const w = [];
+  const emp = $("fEmp").value.trim();
+  if (emp) w.push(`employer_name ILIKE '%${esc(emp)}%'`);
   const t = $("fTitle").value.trim();
   if (t) w.push(`job_title LIKE '%${esc(t.toUpperCase())}%'`);
   if ($("fState").value) w.push(`worksite_state = '${esc($("fState").value)}'`);
@@ -210,7 +213,7 @@ function renderLiveSql(where) {
   const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY annual_wage DESC LIMIT 2000;`;
   $("liveSql").innerHTML = sql
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/\b(SELECT|FROM|WHERE|AND|ORDER BY|LIMIT|NOT|LIKE)\b/g, '<span class="kw">$1</span>')
+    .replace(/\b(SELECT|FROM|WHERE|AND|ORDER BY|LIMIT|NOT|ILIKE|LIKE)\b/g, '<span class="kw">$1</span>')
     .replace(/('[^']*'|\b\d{4,}\b)/g, '<span class="lit">$1</span>');
   return sql;
 }
@@ -325,7 +328,7 @@ async function runConsole() {
 function wireEvents() {
   let t;
   const bounce = () => { clearTimeout(t); t = setTimeout(refresh, 250); };
-  for (const id of ["fTitle", "fWage"]) $(id).addEventListener("input", bounce);
+  for (const id of ["fEmp", "fTitle", "fWage"]) $(id).addEventListener("input", bounce);
   for (const id of ["fState", "fCat", "fYear", "fUni"]) $(id).addEventListener("change", refresh);
   $("copySql").onclick = () => navigator.clipboard.writeText($("liveSql").textContent);
   $("openSql").onclick = () => { $("sqlIn").value = $("liveSql").textContent;
