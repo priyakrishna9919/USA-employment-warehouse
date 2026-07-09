@@ -106,9 +106,21 @@
         <select id="fSort">
           <option value="wage_desc">Wage: high &rarr; low</option>
           <option value="wage_asc">Wage: low &rarr; high</option>
+          <option value="approved_desc">Approvals: high &rarr; low</option>
           <option value="year_desc">Year: newest first</option>
           <option value="emp_asc">Employer: A &rarr; Z</option>
         </select></div>
+      <div class="f"><label for="fCountry">Country</label>
+        <select id="fCountry"><option value="US" selected>United States</option></select></div>
+      <div class="f"><label for="fVisa">Visa class</label><select id="fVisa"><option value="">All</option></select></div>
+      <div class="f"><label for="fStatus">Status</label>
+        <select id="fStatus"><option value="">All</option><option value="cert">Certified only</option><option value="den">Denied only</option></select></div>
+      <div class="f"><label for="fView">View</label>
+        <select id="fView">
+          <option value="rows">Individual filings</option>
+          <option value="grouped">Approved workers by employer &times; role &times; city</option>
+        </select></div>
+      <div class="f"><label>&nbsp;</label><button id="clearF" class="tbtn" style="padding:8px 12px">&#10005; Clear filters</button></div>
     </div>
 
     <div class="sqlbar">
@@ -137,9 +149,7 @@
           <button id="prevPg" class="tbtn">&larr; Prev</button>
           <button id="nextPg" class="tbtn">Next &rarr;</button>
         </div>
-        <div class="tablewrap"><table id="tRows"><thead><tr>
-          <th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th>Status</th><th style="text-align:right">Annual wage</th>
-        </tr></thead><tbody></tbody></table></div>
+        <div class="tablewrap"><table id="tRows"><thead></thead><tbody></tbody></table></div>
         <div class="toolbar" style="margin:10px 0 0">
           <span id="pageInfo2" class="mono" style="color:var(--muted);font-size:12px"></span>
           <span style="flex:1"></span>
@@ -202,7 +212,14 @@ async function populateFilters() {
     $("fCat").add(new Option(r.c, r.c));
   for (const r of await rows(`SELECT DISTINCT fiscal_year y FROM sponsorships WHERE y IS NOT NULL ORDER BY 1 DESC`))
     $("fYear").add(new Option(r.y, r.y));
+  for (const r of await rows(`SELECT DISTINCT visa_class v FROM sponsorships WHERE v IS NOT NULL ORDER BY 1`))
+    $("fVisa").add(new Option(r.v, r.v));
+  // count real approved worker positions if the column exists, else count filings
+  const cols = (await rows(`DESCRIBE sponsorships`)).map(r => r.column_name);
+  APPROVED_EXPR = cols.includes("total_worker_positions")
+    ? "CAST(SUM(total_worker_positions) AS BIGINT)" : "COUNT(*)";
 }
+let APPROVED_EXPR = "COUNT(*)";
 
 const esc = s => String(s).replace(/'/g, "''");
 
@@ -219,22 +236,48 @@ function whereClause() {
   if (mw > 0) w.push(`annual_wage >= ${mw}`);
   if ($("fUni").value === "1") w.push(`is_university`);
   if ($("fUni").value === "0") w.push(`NOT is_university`);
+  if ($("fVisa").value) w.push(`visa_class = '${esc($("fVisa").value)}'`);
+  if ($("fStatus").value === "cert") w.push(`case_status ILIKE 'Certified%'`);
+  if ($("fStatus").value === "den") w.push(`case_status = 'Denied'`);
   return w.length ? "WHERE " + w.join("\n  AND ") : "";
 }
+
+const isGrouped = () => $("fView").value === "grouped";
 
 const ORDERS = {
   wage_desc: "annual_wage DESC NULLS LAST",
   wage_asc:  "annual_wage ASC NULLS LAST",
+  approved_desc: "annual_wage DESC NULLS LAST",
   year_desc: "fiscal_year DESC, annual_wage DESC NULLS LAST",
   emp_asc:   "employer_name ASC, annual_wage DESC NULLS LAST",
 };
-const orderClause = () => ORDERS[$("fSort").value] || ORDERS.wage_desc;
+const G_ORDERS = {
+  wage_desc: "median_wage DESC NULLS LAST",
+  wage_asc:  "median_wage ASC NULLS LAST",
+  approved_desc: "approved DESC",
+  year_desc: "fiscal_year DESC, approved DESC",
+  emp_asc:   "employer_name ASC, approved DESC",
+};
+const orderClause = () =>
+  (isGrouped() ? G_ORDERS : ORDERS)[$("fSort").value]
+  || (isGrouped() ? G_ORDERS.approved_desc : ORDERS.wage_desc);
+
+function buildMainSql(where) {
+  if (isGrouped()) {
+    // grouped view counts certified (approved) filings only
+    const w = where
+      ? where + "\n  AND case_status ILIKE 'Certified%'"
+      : "WHERE case_status ILIKE 'Certified%'";
+    return `SELECT employer_name, job_title, worksite_city, worksite_state, fiscal_year,\n       ${APPROVED_EXPR} AS approved, ROUND(MEDIAN(annual_wage)) AS median_wage\nFROM sponsorships\n${w}\nGROUP BY 1, 2, 3, 4, 5\nORDER BY ${orderClause()} LIMIT 2000;`;
+  }
+  return `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY ${orderClause()} LIMIT 2000;`;
+}
 
 function renderLiveSql(where) {
-  const sql = `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY ${orderClause()} LIMIT 2000;`;
+  const sql = buildMainSql(where);
   $("liveSql").innerHTML = sql
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/\b(SELECT|FROM|WHERE|AND|ORDER BY|LIMIT|NOT|ILIKE|LIKE)\b/g, '<span class="kw">$1</span>')
+    .replace(/\b(SELECT|FROM|WHERE|AND|GROUP BY|ORDER BY|LIMIT|NOT|ILIKE|LIKE|AS)\b/g, '<span class="kw">$1</span>')
     .replace(/('[^']*'|\b\d{4,}\b)/g, '<span class="lit">$1</span>');
   return sql;
 }
@@ -277,25 +320,38 @@ async function refresh() {
                          GROUP BY 1 HAVING y IS NOT NULL ORDER BY 1`);
   drawChart("cYears", "line", yr.map(r => r.y), yr.map(r => Number(r.n)));
 
+  tableMode = isGrouped() ? "grouped" : "rows";
   tableRows = await rows(sql.replace(/;$/, ""));
   page = 0;
   renderTable();
 }
 
-let tableRows = [], page = 0;
+let tableRows = [], page = 0, tableMode = "rows";
 const PAGE_SIZE = 50;
 
+const HEADS = {
+  rows: `<tr><th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th>Status</th><th style="text-align:right">Annual wage</th></tr>`,
+  grouped: `<tr><th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th style="text-align:right">Approved</th><th style="text-align:right">Median wage</th></tr>`,
+};
+
 function renderTable() {
+  $("tRows").querySelector("thead").innerHTML = HEADS[tableMode];
   const tbody = $("tRows").querySelector("tbody");
   tbody.innerHTML = "";
   const start = page * PAGE_SIZE;
   for (const r of tableRows.slice(start, start + PAGE_SIZE)) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${r.employer_name ?? ""}</td><td>${r.job_title ?? ""}</td>
-      <td>${r.worksite_city ?? ""}</td><td>${r.worksite_state ?? ""}</td>
-      <td class="num">${r.fiscal_year ?? ""}</td>
-      <td class="status-${String(r.case_status).split(" ")[0]}">${r.case_status ?? ""}</td>
-      <td class="num">${money(r.annual_wage)}</td>`;
+    tr.innerHTML = tableMode === "grouped"
+      ? `<td>${r.employer_name ?? ""}</td><td>${r.job_title ?? ""}</td>
+         <td>${r.worksite_city ?? ""}</td><td>${r.worksite_state ?? ""}</td>
+         <td class="num">${r.fiscal_year ?? ""}</td>
+         <td class="num">${fmt(r.approved)}</td>
+         <td class="num">${money(r.median_wage)}</td>`
+      : `<td>${r.employer_name ?? ""}</td><td>${r.job_title ?? ""}</td>
+         <td>${r.worksite_city ?? ""}</td><td>${r.worksite_state ?? ""}</td>
+         <td class="num">${r.fiscal_year ?? ""}</td>
+         <td class="status-${String(r.case_status).split(" ")[0]}">${r.case_status ?? ""}</td>
+         <td class="num">${money(r.annual_wage)}</td>`;
     tbody.appendChild(tr);
   }
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE_SIZE));
@@ -310,7 +366,9 @@ async function downloadCsv() {
   const btn = $("dlCsv");
   btn.disabled = true; btn.textContent = "preparing\u2026";
   try {
-    const data = await rows(`SELECT employer_name, job_title, job_category, soc_code, soc_title,
+    const data = isGrouped()
+      ? await rows(buildMainSql(whereClause()).replace(/;$/, "").replace(/LIMIT 2000$/, "LIMIT 100000"))
+      : await rows(`SELECT employer_name, job_title, job_category, soc_code, soc_title,
         worksite_city, worksite_state, fiscal_year, visa_class, case_status,
         annual_wage, prevailing_wage, is_university
       FROM sponsorships ${whereClause()}
@@ -363,7 +421,15 @@ function wireEvents() {
   $("fEmp").addEventListener("input", () => { suggest("fEmp", "empList", "employer_name"); bounce(); });
   $("fTitle").addEventListener("input", () => { suggest("fTitle", "titleList", "job_title"); bounce(); });
   $("fWage").addEventListener("input", bounce);
-  for (const id of ["fState", "fCat", "fYear", "fUni", "fSort"]) $(id).addEventListener("change", refresh);
+  for (const id of ["fState", "fCat", "fYear", "fUni", "fSort", "fVisa", "fStatus", "fView"]) $(id).addEventListener("change", refresh);
+  $("clearF").onclick = () => {
+    for (const id of ["fEmp", "fTitle", "fWage"]) $(id).value = "";
+    for (const id of ["fState", "fCat", "fYear", "fUni", "fVisa", "fStatus"]) $(id).value = "";
+    $("fSort").value = "wage_desc";
+    $("fView").value = "rows";
+    $("empList").innerHTML = ""; $("titleList").innerHTML = "";
+    refresh();
+  };
   $("copySql").onclick = () => navigator.clipboard.writeText($("liveSql").textContent);
   $("openSql").onclick = () => { $("sqlIn").value = $("liveSql").textContent;
                                  $("sqlIn").scrollIntoView({ behavior: "smooth" }); };
