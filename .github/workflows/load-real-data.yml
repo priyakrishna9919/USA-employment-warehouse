@@ -15,7 +15,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt
       - name: Download DOL disclosure files (skips any that 404)
-        run: python -m etl.download || true
+        run: python -m etl.download --discover || true
       - name: Require at least one downloaded file
         run: |
           ls -lh data/raw/lca/ || true

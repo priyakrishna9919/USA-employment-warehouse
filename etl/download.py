@@ -14,6 +14,27 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
+PERF_PAGE = "https://www.dol.gov/agencies/eta/foreign-labor/performance"
+
+
+def discover_lca_urls(min_fy: int = 2025) -> list[str]:
+    """Scrape DOL's performance page for LCA disclosure .xlsx links.
+
+    Immune to file-name pattern changes: whatever DOL links, we find.
+    """
+    import re
+
+    html = requests.get(PERF_PAGE, timeout=60,
+                        headers={"User-Agent": "Mozilla/5.0 (data-warehouse ETL)"}).text
+    urls = re.findall(r'href="([^"]*LCA_Disclosure_Data[^"]*\.xlsx)"', html, re.I)
+    out = []
+    for u in urls:
+        if not u.startswith("http"):
+            u = "https://www.dol.gov" + u
+        m = re.search(r"FY(\d{4})", u)
+        if m and int(m.group(1)) >= min_fy and u not in out:
+            out.append(u)
+    return out
 
 
 def load_config() -> dict:
@@ -46,11 +67,27 @@ def download_file(url: str, dest: Path, chunk: int = 1 << 20) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--only", choices=["lca", "perm"], default=None)
+    parser.add_argument("--discover", action="store_true",
+                        help="scrape dol.gov for current LCA file links instead of using config names")
+    parser.add_argument("--min-fy", type=int, default=2025)
     args = parser.parse_args()
+
+    failures = 0
+    if args.discover:
+        try:
+            urls = discover_lca_urls(args.min_fy)
+        except Exception as exc:  # noqa: BLE001
+            print(f"discovery failed ({exc}); falling back to config", file=sys.stderr)
+            urls = []
+        print(f"[discover] found {len(urls)} LCA file(s) on dol.gov")
+        for url in urls:
+            if not download_file(url, RAW / "lca" / url.rsplit("/", 1)[-1]):
+                failures += 1
+        if urls:
+            sys.exit(1 if failures == len(urls) else 0)
 
     cfg = load_config()
     sources = [args.only] if args.only else ["lca", "perm"]
-    failures = 0
     for source in sources:
         section = cfg.get(source) or {}
         base = section.get("base_url", "")
