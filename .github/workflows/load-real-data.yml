@@ -14,8 +14,10 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt
-      - name: Download DOL disclosure files (skips any that 404)
-        run: python -m etl.download --discover || true
+      - name: Download DOL disclosure files (config names + discovered links)
+        run: |
+          python -m etl.download --only lca || true
+          python -m etl.download --discover || true
       - name: Require at least one downloaded file
         run: |
           ls -lh data/raw/lca/ || true
@@ -24,10 +26,21 @@ jobs:
         run: |
           python -m etl.load
           python -m etl.export
+      - name: Write manifest for diagnostics
+        run: |
+          {
+            echo "== run $(date -u) =="
+            cat data/raw/lca/download_log.txt 2>/dev/null || echo "no download log"
+            echo "== files on disk =="
+            ls -lh data/raw/lca/ || true
+            echo "== rows by source file =="
+            python -c "import duckdb; [print(r) for r in duckdb.connect('data/warehouse.duckdb').execute('SELECT source_file, COUNT(*) FROM lca_filings GROUP BY 1').fetchall()]"
+          } > docs/data/manifest.txt
+          cat docs/data/manifest.txt
       - name: Commit refreshed data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/data/sponsorships.parquet
+          git add docs/data/sponsorships.parquet docs/data/manifest.txt
           git diff --cached --quiet || git commit -m "data: refresh from real DOL disclosure files"
           git push
