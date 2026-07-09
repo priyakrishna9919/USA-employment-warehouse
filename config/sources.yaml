@@ -1,23 +1,16 @@
-# Real public data sources. URLs verified as of 2026 patterns; check the
-# DOL OFLC "Performance Data" page each quarter for the newest file names:
-# https://www.dol.gov/agencies/eta/foreign-labor/performance
-
+# Real public data sources. DOL posts LCA disclosure files quarterly; Q4 files
+# contain the full fiscal year. Names below are candidates - any that 404 are
+# skipped. Check https://www.dol.gov/agencies/eta/foreign-labor/performance
 lca:
-  # H-1B / H-1B1 / E-3 LCA disclosure files (Excel), one or more per fiscal year
   base_url: "https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs"
   files:
-    - "LCA_Disclosure_Data_FY2024_Q4.xlsx"
     - "LCA_Disclosure_Data_FY2025_Q4.xlsx"
+    - "LCA_Disclosure_Data_FY2026_Q1.xlsx"
+    - "LCA_Disclosure_Data_FY2026_Q2.xlsx"
 
 perm:
   base_url: "https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs"
-  files:
-    - "PERM_Disclosure_Data_FY2024_Q4.xlsx"
-
-uscis_h1b_hub:
-  # USCIS H-1B Employer Data Hub CSV exports
-  # https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub
-  note: "Export CSVs per fiscal year from the Data Hub UI and drop them into data/raw/uscis/"
+  files: []
 
 database:
   path: "data/warehouse.duckdb"

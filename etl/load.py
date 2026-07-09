@@ -64,11 +64,24 @@ def annualize(wage, unit) -> float | None:
     return val if 10_000 <= val <= 5_000_000 else None  # sanity bounds
 
 
+NEEDED_COLS = {
+    "CASE_NUMBER", "CASE_STATUS", "RECEIVED_DATE", "DECISION_DATE", "VISA_CLASS",
+    "JOB_TITLE", "SOC_CODE", "SOC_TITLE", "FULL_TIME_POSITION", "EMPLOYER_NAME",
+    "EMPLOYER_STATE", "WORKSITE_CITY", "WORKSITE_STATE", "WORKSITE_POSTAL_CODE",
+    "WAGE_RATE_OF_PAY_FROM", "WAGE_UNIT_OF_PAY", "PREVAILING_WAGE",
+    "PW_UNIT_OF_PAY", "TOTAL_WORKER_POSITIONS",
+}
+
+
 def read_raw(path: Path) -> pd.DataFrame:
+    keep = lambda c: str(c).strip().upper() in NEEDED_COLS  # noqa: E731
     if path.suffix.lower() in {".xlsx", ".xls"}:
-        df = pd.read_excel(path, dtype=str)
+        try:  # calamine: much faster / lighter on 200MB+ government files
+            df = pd.read_excel(path, dtype=str, engine="calamine", usecols=keep)
+        except (ImportError, ValueError):
+            df = pd.read_excel(path, dtype=str, usecols=keep)
     else:
-        df = pd.read_csv(path, dtype=str, low_memory=False)
+        df = pd.read_csv(path, dtype=str, low_memory=False, usecols=keep)
     df.columns = [c.strip().upper() for c in df.columns]
     return df
 

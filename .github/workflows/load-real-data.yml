@@ -1,0 +1,33 @@
+name: Load real DOL data
+on:
+  workflow_dispatch:        # run manually from the Actions tab
+  schedule:
+    - cron: "0 6 2 * *"     # and monthly, on the 2nd
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Download DOL disclosure files (skips any that 404)
+        run: python -m etl.download || true
+      - name: Require at least one downloaded file
+        run: |
+          ls -lh data/raw/lca/ || true
+          test -n "$(ls data/raw/lca/*.xlsx 2>/dev/null)" || { echo "No DOL files downloaded - update config/sources.yaml file names"; exit 1; }
+      - name: Build warehouse and export dashboard parquet
+        run: |
+          python -m etl.load
+          python -m etl.export
+      - name: Commit refreshed data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/sponsorships.parquet
+          git diff --cached --quiet || git commit -m "data: refresh from real DOL disclosure files"
+          git push
