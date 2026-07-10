@@ -123,6 +123,12 @@
         <div class="f"><label for="fVisa" title="Visa program of the filing: H-1B, H-1B1 (Chile/Singapore), or E-3 (Australia).">Visa class</label><select id="fVisa"><option value="">All</option></select></div>
         <div class="f"><label for="fStatus" title="Outcome of the case: Certified = approved by DOL; Denied; Withdrawn.">Status</label>
           <select id="fStatus"><option value="">All</option><option value="cert">Certified only</option><option value="den">Denied only</option></select></div>
+        <div class="f" id="gcFilter" hidden><label for="fGC" title="Cross-references PERM (green card) filings. 'Any role' = the employer has filed at least one PERM case. 'This occupation' = the employer has filed PERM for the same SOC occupation code as the H-1B row.">Green card (PERM)</label>
+          <select id="fGC">
+            <option value="">All employers</option>
+            <option value="emp">Sponsors green cards (any role)</option>
+            <option value="role">Sponsors green cards for this occupation</option>
+          </select></div>
         <div class="f"><label for="fCountry" title="DOL LCA data covers U.S. worksites only; more countries can be added with future datasets.">Country</label>
           <select id="fCountry"><option value="US" selected>United States</option></select></div>
       </details>
@@ -200,7 +206,7 @@ import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.1
 const $ = id => document.getElementById(id);
 const fmt = n => n == null ? "–" : Number(n).toLocaleString("en-US");
 const money = n => n == null ? "–" : "$" + Number(n).toLocaleString("en-US");
-let conn, charts = {};
+let conn, charts = {}, hasPerm = false;
 
 async function init() {
   const bundles = duckdb.getJsDelivrBundles();
@@ -224,6 +230,8 @@ async function init() {
       await db.registerFileBuffer("perm.parquet", new Uint8Array(await pr.arrayBuffer()));
       await conn.query(`CREATE VIEW green_cards AS SELECT * FROM read_parquet('perm.parquet')`);
       document.getElementById("consoleTables").textContent = "sponsorships, green_cards";
+      hasPerm = true;
+      $("gcFilter").hidden = false;
     }
   } catch (e) { console.log("no PERM data yet"); }
 
@@ -267,6 +275,10 @@ function whereClause() {
   if (mw > 0) w.push(`annual_wage >= ${mw}`);
   if ($("fUni").value === "1") w.push(`is_university`);
   if ($("fUni").value === "0") w.push(`NOT is_university`);
+  if (hasPerm && $("fGC").value === "emp")
+    w.push(`employer_name IN (SELECT DISTINCT employer_name FROM green_cards)`);
+  if (hasPerm && $("fGC").value === "role")
+    w.push(`(employer_name, soc_code) IN (SELECT DISTINCT employer_name, soc_code FROM green_cards)`);
   if ($("fVisa").value) w.push(`visa_class = '${esc($("fVisa").value)}'`);
   if ($("fStatus").value === "cert") w.push(`case_status ILIKE 'Certified%'`);
   if ($("fStatus").value === "den") w.push(`case_status = 'Denied'`);
@@ -294,14 +306,20 @@ const orderClause = () =>
   || (isGrouped() ? G_ORDERS.approved_desc : ORDERS.wage_desc);
 
 function buildMainSql(where) {
+  const gcCol = hasPerm
+    ? ",\n       employer_name IN (SELECT DISTINCT employer_name FROM green_cards) AS gc_sponsor"
+    : "";
+  const gcAgg = hasPerm
+    ? ",\n       (SELECT COUNT(*) FROM green_cards g WHERE g.employer_name = s.employer_name) AS green_cards"
+    : "";
   if (isGrouped()) {
     // grouped view counts certified (approved) filings only
     const w = where
       ? where + "\n  AND case_status ILIKE 'Certified%'"
       : "WHERE case_status ILIKE 'Certified%'";
-    return `SELECT employer_name, job_title, worksite_city, worksite_state, fiscal_year,\n       ${APPROVED_EXPR} AS approved, ROUND(MEDIAN(annual_wage)) AS median_wage\nFROM sponsorships\n${w}\nGROUP BY 1, 2, 3, 4, 5\nORDER BY ${orderClause()} LIMIT 2000;`;
+    return `SELECT employer_name, job_title, worksite_city, worksite_state, fiscal_year,\n       ${APPROVED_EXPR} AS approved, ROUND(MEDIAN(annual_wage)) AS median_wage${gcAgg}\nFROM sponsorships s\n${w}\nGROUP BY 1, 2, 3, 4, 5\nORDER BY ${orderClause()} LIMIT 2000;`;
   }
-  return `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY ${orderClause()} LIMIT 2000;`;
+  return `SELECT employer_name, job_title, worksite_city, worksite_state,\n       fiscal_year, case_status, annual_wage${gcCol}\nFROM sponsorships\n${where ? where + "\n" : ""}ORDER BY ${orderClause()} LIMIT 2000;`;
 }
 
 function renderLiveSql(where) {
@@ -360,13 +378,13 @@ async function refresh() {
 let tableRows = [], page = 0, tableMode = "rows";
 const PAGE_SIZE = 50;
 
-const HEADS = {
-  rows: `<tr><th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th>Status</th><th style="text-align:right">Annual wage</th></tr>`,
-  grouped: `<tr><th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th style="text-align:right">Approved</th><th style="text-align:right">Median wage</th></tr>`,
-};
+const HEADS = () => ({
+  rows: `<tr><th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th>Status</th><th style="text-align:right">Annual wage</th>${hasPerm ? "<th>GC</th>" : ""}</tr>`,
+  grouped: `<tr><th>Employer</th><th>Job title</th><th>City</th><th>ST</th><th>FY</th><th style="text-align:right">Approved</th><th style="text-align:right">Median wage</th>${hasPerm ? '<th style="text-align:right" title="Green-card (PERM) filings by this employer, all years">Green cards</th>' : ""}</tr>`,
+});
 
 function renderTable() {
-  $("tRows").querySelector("thead").innerHTML = HEADS[tableMode];
+  $("tRows").querySelector("thead").innerHTML = HEADS()[tableMode];
   const tbody = $("tRows").querySelector("tbody");
   tbody.innerHTML = "";
   const start = page * PAGE_SIZE;
@@ -377,12 +395,12 @@ function renderTable() {
          <td>${r.worksite_city ?? ""}</td><td>${r.worksite_state ?? ""}</td>
          <td class="num">${r.fiscal_year ?? ""}</td>
          <td class="num">${fmt(r.approved)}</td>
-         <td class="num">${money(r.median_wage)}</td>`
+         <td class="num">${money(r.median_wage)}</td>${hasPerm ? `<td class="num">${fmt(r.green_cards)}</td>` : ""}`
       : `<td>${r.employer_name ?? ""}</td><td>${r.job_title ?? ""}</td>
          <td>${r.worksite_city ?? ""}</td><td>${r.worksite_state ?? ""}</td>
          <td class="num">${r.fiscal_year ?? ""}</td>
          <td class="status-${String(r.case_status).split(" ")[0]}">${r.case_status ?? ""}</td>
-         <td class="num">${money(r.annual_wage)}</td>`;
+         <td class="num">${money(r.annual_wage)}</td>${hasPerm ? `<td>${r.gc_sponsor ? "\u2713" : ""}</td>` : ""}`;
     tbody.appendChild(tr);
   }
   const pages = Math.max(1, Math.ceil(tableRows.length / PAGE_SIZE));
@@ -401,7 +419,7 @@ async function downloadCsv() {
       ? await rows(buildMainSql(whereClause()).replace(/;$/, "").replace(/LIMIT 2000$/, "LIMIT 100000"))
       : await rows(`SELECT employer_name, job_title, job_category, soc_code, soc_title,
         worksite_city, worksite_state, fiscal_year, visa_class, case_status,
-        annual_wage, prevailing_wage, is_university
+        annual_wage, prevailing_wage, is_university${hasPerm ? ", employer_name IN (SELECT DISTINCT employer_name FROM green_cards) AS green_card_sponsor" : ""}
       FROM sponsorships ${whereClause()}
       ORDER BY ${orderClause()} LIMIT 100000`);
     if (!data.length) return;
@@ -452,10 +470,10 @@ function wireEvents() {
   $("fEmp").addEventListener("input", () => { suggest("fEmp", "empList", "employer_name"); bounce(); });
   $("fTitle").addEventListener("input", () => { suggest("fTitle", "titleList", "job_title"); bounce(); });
   $("fWage").addEventListener("input", bounce);
-  for (const id of ["fState", "fCat", "fYear", "fUni", "fSort", "fVisa", "fStatus", "fView"]) $(id).addEventListener("change", refresh);
+  for (const id of ["fState", "fCat", "fYear", "fUni", "fSort", "fVisa", "fStatus", "fGC", "fView"]) $(id).addEventListener("change", refresh);
   $("clearF").onclick = () => {
     for (const id of ["fEmp", "fTitle", "fWage"]) $(id).value = "";
-    for (const id of ["fState", "fCat", "fYear", "fUni", "fVisa", "fStatus"]) $(id).value = "";
+    for (const id of ["fState", "fCat", "fYear", "fUni", "fVisa", "fStatus", "fGC"]) $(id).value = "";
     $("fSort").value = "wage_desc";
     $("fView").value = "rows";
     $("empList").innerHTML = ""; $("titleList").innerHTML = "";
