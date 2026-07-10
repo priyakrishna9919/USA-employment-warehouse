@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Roles Now - USA Employment Data Warehouse</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#E9EEF0;--panel:#FFF;--ink:#152530;--muted:#5C6E79;--line:#D3DCE1;
+        --green:#0B6E4F;--green-soft:#E2F0EA;--amber:#9A6A1B}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 "Archivo",system-ui,sans-serif}
+  .mono{font-family:"IBM Plex Mono",monospace}
+  main{max-width:980px;margin:0 auto;padding:26px 24px 60px}
+  h1{font-size:24px;font-weight:800;letter-spacing:-.02em;margin:0}
+  .sub{color:var(--muted);font-size:14px;margin:4px 0 0}
+  a.back{color:var(--green);font-weight:600;text-decoration:none;font-size:13px}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
+            border-radius:10px;padding:14px;margin-top:16px}
+  .c{display:flex;flex-direction:column;gap:4px;flex:1;min-width:220px}
+  .c label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .c input{font:14px "IBM Plex Mono",monospace;padding:9px;border:1px solid var(--line);border-radius:6px;background:#FBFDFD}
+  .go{align-self:flex-end;background:var(--green);color:#fff;border:none;border-radius:7px;
+      padding:10px 18px;font:600 13px "Archivo";cursor:pointer}
+  .go:hover{background:#0A5F44}
+  .note{font-size:12.5px;color:var(--muted);margin-top:10px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;margin-top:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .card h3{margin:0;font-size:14px;font-weight:700}
+  .count{font:600 30px "IBM Plex Mono",monospace;color:var(--green);margin:6px 0 2px}
+  .count.none{color:var(--muted);font-size:16px;font-weight:500}
+  .src{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  ul.jobs{list-style:none;margin:10px 0 0;padding:0;max-height:220px;overflow-y:auto}
+  ul.jobs li{border-top:1px solid var(--line);padding:6px 0;font-size:13px}
+  ul.jobs a{color:var(--ink);text-decoration:none}
+  ul.jobs a:hover{color:var(--green)}
+  ul.jobs .loc{color:var(--muted);font-size:11.5px}
+  .fallback a{color:var(--green);font-weight:600}
+  .spin{color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="index.html">&larr; back to warehouse dashboard</a>
+  <h1>Open Roles Now</h1>
+  <p class="sub">Live openings pulled in your browser from each employer's public job board API (Greenhouse / Lever / Ashby). Employers without a public feed get a search link instead - no fake numbers.</p>
+
+  <div class="controls">
+    <div class="c"><label for="role">Role keyword</label><input id="role" placeholder="e.g. data scientist"></div>
+    <div class="c" style="flex:2"><label for="emps">Employers (comma-separated, up to 10)</label>
+      <input id="emps" placeholder="e.g. Stripe, Databricks, Airbnb, Datadog"></div>
+    <button class="go" id="go">Check openings</button>
+  </div>
+  <p class="note">Coverage note: sponsors like Amazon, Microsoft, Google, and most universities run custom career sites without public APIs - those cards link you straight to their live search results.</p>
+
+  <div class="cards" id="cards"></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// Known public job-board slugs for common H-1B sponsors (best-effort; unknown -> fallback link)
+const ATS = {
+  "stripe": ["greenhouse", "stripe"], "databricks": ["greenhouse", "databricks"],
+  "airbnb": ["greenhouse", "airbnb"], "coinbase": ["greenhouse", "coinbase"],
+  "figma": ["greenhouse", "figma"], "robinhood": ["greenhouse", "robinhood"],
+  "datadog": ["greenhouse", "datadog"], "gitlab": ["greenhouse", "gitlab"],
+  "pinterest": ["greenhouse", "pinterest"], "instacart": ["greenhouse", "instacart"],
+  "doordash": ["greenhouse", "doordashusa"], "reddit": ["greenhouse", "reddit"],
+  "asana": ["greenhouse", "asana"], "affirm": ["greenhouse", "affirm"],
+  "dropbox": ["greenhouse", "dropbox"], "duolingo": ["greenhouse", "duolingo"],
+  "roblox": ["greenhouse", "roblox"], "anthropic": ["greenhouse", "anthropic"],
+  "netflix": ["lever", "netflix"], "palantir": ["lever", "palantir"],
+  "plaid": ["lever", "plaid"], "attentive": ["greenhouse", "attentive"],
+  "ramp": ["ashby", "ramp"], "notion": ["ashby", "notion"], "linear": ["ashby", "linear"],
+  "openai": ["ashby", "openai"],
+};
+
+const norm = s => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ")
+  .replace(/\b(inc|llc|llp|ltd|corp|corporation|company|co|technologies|technology|labs|usa|us|services)\b/g, "")
+  .trim();
+
+function resolveAts(name) {
+  const n = norm(name);
+  for (const key of Object.keys(ATS)) if (n === key || n.includes(key) || key.includes(n)) return ATS[key];
+  return null;
+}
+
+async function fetchJobs(kind, slug) {
+  if (kind === "greenhouse") {
+    const d = await (await fetch(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`)).json();
+    return (d.jobs || []).map(j => ({ title: j.title, url: j.absolute_url, loc: j.location?.name || "" }));
+  }
+  if (kind === "lever") {
+    const d = await (await fetch(`https://api.lever.co/v0/postings/${slug}?mode=json`)).json();
+    return (Array.isArray(d) ? d : []).map(j => ({ title: j.text, url: j.hostedUrl, loc: j.categories?.location || "" }));
+  }
+  if (kind === "ashby") {
+    const d = await (await fetch(`https://api.ashbyhq.com/posting-api/job-board/${slug}`)).json();
+    return (d.jobs || []).map(j => ({ title: j.title, url: j.jobUrl, loc: j.location || "" }));
+  }
+  return [];
+}
+
+function fallbackCard(name, role) {
+  const q = encodeURIComponent(`${name} "${role}" jobs`);
+  return `<div class="card fallback"><h3>${name}</h3>
+    <div class="count none">no public feed</div>
+    <div class="src">custom career site</div>
+    <p style="font-size:13px">This employer doesn't expose a public job-board API, so live counts can't be fetched here. See their current openings directly:</p>
+    <a target="_blank" rel="noopener" href="https://www.google.com/search?q=${q}">search live openings &rarr;</a></div>`;
+}
+
+async function run() {
+  const role = $("role").value.trim().toLowerCase();
+  const emps = $("emps").value.split(",").map(s => s.trim()).filter(Boolean).slice(0, 10);
+  const cards = $("cards");
+  cards.innerHTML = "";
+  if (!emps.length) { cards.innerHTML = '<p class="spin">add at least one employer above</p>'; return; }
+  for (const name of emps) {
+    const el = document.createElement("div");
+    el.innerHTML = `<div class="card"><h3>${name}</h3><div class="spin">checking live board&hellip;</div></div>`;
+    cards.appendChild(el);
+    const ats = resolveAts(name);
+    if (!ats) { el.innerHTML = fallbackCard(name, role || "jobs"); continue; }
+    try {
+      const jobs = await fetchJobs(ats[0], ats[1]);
+      const hits = role ? jobs.filter(j => j.title.toLowerCase().includes(role)) : jobs;
+      el.innerHTML = `<div class="card"><h3>${name}</h3>
+        <div class="count">${hits.length}</div>
+        <div class="src">open ${role ? `"${role}"` : ""} roles now &middot; via ${ats[0]}</div>
+        <ul class="jobs">${hits.slice(0, 40).map(j =>
+          `<li><a target="_blank" rel="noopener" href="${j.url}">${j.title}</a><div class="loc">${j.loc}</div></li>`).join("")}
+        </ul></div>`;
+    } catch (e) { el.innerHTML = fallbackCard(name, role || "jobs"); }
+  }
+}
+
+$("go").onclick = run;
+// prefill from query params passed by the main dashboard tile
+const p = new URLSearchParams(location.search);
+if (p.get("role")) $("role").value = p.get("role");
+if (p.get("employers")) $("emps").value = p.get("employers").split("|").join(", ");
+if (p.get("role") || p.get("employers")) run();
+</script>
+</body>
+</html>

@@ -61,6 +61,9 @@
   .kpi .v{font:600 26px "IBM Plex Mono",monospace}
   .kpi .l{font-size:12px;color:var(--muted);margin-top:2px}
   .kpi.cert .v{color:var(--green)}
+  a.kpi.tile{text-decoration:none;background:var(--green-soft);border-color:var(--green);display:block}
+  a.kpi.tile .v{color:var(--green)}
+  a.kpi.tile:hover{background:#D2E8DD}
 
   /* charts + table */
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
@@ -161,6 +164,10 @@
       <div class="kpi cert"><div class="v" id="kCert">&ndash;</div><div class="l">certified</div></div>
       <div class="kpi"><div class="v" id="kMedian">&ndash;</div><div class="l">median wage</div></div>
       <div class="kpi"><div class="v" id="kEmployers">&ndash;</div><div class="l">employers</div></div>
+      <a class="kpi tile" id="openRoles" href="jobs.html" title="Opens a second page that checks live job boards for the top employers in your current filter">
+        <div class="v" style="font-size:20px">Open roles now &rarr;</div>
+        <div class="l">live openings for these filters</div>
+      </a>
     </div>
 
     <div class="grid">
@@ -490,6 +497,15 @@ function wireEvents() {
                       $("tRows").scrollIntoView({ block: "start", behavior: "smooth" }); };
   $("prevPg2").onclick = () => flip(-1);
   $("nextPg2").onclick = () => flip(1);
+  $("openRoles").onclick = async (ev) => {
+    ev.preventDefault();
+    const top = await rows(`SELECT employer_name e, COUNT(*) n FROM sponsorships ${whereClause()}
+                            GROUP BY 1 ORDER BY n DESC LIMIT 10`);
+    const q = new URLSearchParams();
+    if ($("fTitle").value.trim()) q.set("role", $("fTitle").value.trim().toLowerCase());
+    if (top.length) q.set("employers", top.map(r => r.e).join("|"));
+    location.href = "jobs.html?" + q.toString();
+  };
 }
 
 init().catch(e => { $("loader").textContent = "Failed to load warehouse: " + e.message; });
