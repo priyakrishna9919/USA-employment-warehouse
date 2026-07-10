@@ -14,7 +14,9 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt
-      - name: Download DOL disclosure files (config names + discovered links)
+      - name: Download DOL disclosure files (release assets, config names)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m etl.download --release || true
           python -m etl.download --only lca || true
@@ -43,6 +45,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/data/sponsorships.parquet docs/data/manifest.txt
+          git add docs/data/sponsorships.parquet docs/data/perm.parquet docs/data/manifest.txt 2>/dev/null || git add docs/data/
           git diff --cached --quiet || git commit -m "data: refresh from real DOL disclosure files"
-          git push
+          git pull --rebase origin main || true
+          git push || (git pull --rebase origin main && git push)

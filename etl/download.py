@@ -94,9 +94,16 @@ def download_release_assets() -> int:
     """Download every .xlsx asset attached to the 'data-drop' release.
     Routes files containing PERM to data/raw/perm, everything else to lca.
     Returns count downloaded. Names don't need to match config."""
+    import os
     api = f"https://api.github.com/repos/{REPO}/releases/tags/data-drop"
+    headers = {}
+    if os.environ.get("GITHUB_TOKEN"):
+        headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
     try:
-        assets = requests.get(api, timeout=30).json().get("assets", [])
+        resp = requests.get(api, timeout=30, headers=headers).json()
+        assets = resp.get("assets", [])
+        if not assets:
+            print(f"release listing empty: {resp.get('message', 'no assets')}", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001
         print(f"release lookup failed: {exc}", file=sys.stderr)
         return 0
