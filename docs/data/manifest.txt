@@ -1,4 +1,4 @@
-== run Fri Jul 10 01:16:48 UTC 2026 ==
+== run Fri Jul 10 14:33:31 UTC 2026 ==
 OK   LCA_Disclosure_Data_FY2025_Q2.xlsx 107.0MB via direct
 OK   LCA_Disclosure_Data_FY2025_Q3.xlsx 143.9MB via direct
 OK   LCA_Disclosure_Data_FY2025_Q4.xlsx 79.1MB via direct
@@ -13,14 +13,14 @@ FAIL LCA_Disclosure_Data_FY2026_Q2.xlsx
      https://web.archive.org/web/2026id_/https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs/LCA_Disclosure_Data_FY2026_Q2.xlsx attempt 1: HTTPError: 404 Client Error: NOT FOUND for url: https://web.archive.org/web/2026id_/https://www.dol.gov/sites/dolgov/files/ETA/oflc/pdfs/LCA_Disclosure_Data_FY2026_Q2.xlsx
 == files on disk ==
 total 519M
--rw-r--r-- 1 runner runner 102M Jul 10 01:13 LCA_Disclosure_Data_FY2025_Q2.xlsx
--rw-r--r-- 1 runner runner 138M Jul 10 01:13 LCA_Disclosure_Data_FY2025_Q3.xlsx
--rw-r--r-- 1 runner runner  76M Jul 10 01:13 LCA_Disclosure_Data_FY2025_Q4.xlsx
--rw-r--r-- 1 runner runner  73M Jul 10 01:14 LCA_Disclosure_Data_FY2026_Q1.xlsx
--rw-r--r-- 1 runner runner 132M Jul 10 01:13 LCA_Dislclosure_Data_FY2026_Q2.xlsx
--rw-r--r-- 1 runner runner 2.0K Jul 10 01:14 download_log.txt
+-rw-r--r-- 1 runner runner 102M Jul 10 14:30 LCA_Disclosure_Data_FY2025_Q2.xlsx
+-rw-r--r-- 1 runner runner 138M Jul 10 14:30 LCA_Disclosure_Data_FY2025_Q3.xlsx
+-rw-r--r-- 1 runner runner  76M Jul 10 14:30 LCA_Disclosure_Data_FY2025_Q4.xlsx
+-rw-r--r-- 1 runner runner  73M Jul 10 14:30 LCA_Disclosure_Data_FY2026_Q1.xlsx
+-rw-r--r-- 1 runner runner 132M Jul 10 14:30 LCA_Dislclosure_Data_FY2026_Q2.xlsx
+-rw-r--r-- 1 runner runner 2.0K Jul 10 14:30 download_log.txt
 == rows by source file ==
 ('LCA_Disclosure_Data_FY2025_Q3.xlsx', 236280)
-('LCA_Disclosure_Data_FY2025_Q4.xlsx', 117224)
 ('LCA_Dislclosure_Data_FY2026_Q2.xlsx', 210387)
 ('LCA_Disclosure_Data_FY2025_Q2.xlsx', 130282)
+('LCA_Disclosure_Data_FY2025_Q4.xlsx', 117224)
