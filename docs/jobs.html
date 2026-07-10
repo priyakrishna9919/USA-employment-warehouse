@@ -47,7 +47,7 @@
 
   <div class="controls">
     <div class="c"><label for="role">Role keyword</label><input id="role" placeholder="e.g. data scientist"></div>
-    <div class="c" style="flex:2"><label for="emps">Employers (comma-separated, up to 10)</label>
+    <div class="c" style="flex:2"><label for="emps">Employers (comma-separated)</label>
       <input id="emps" placeholder="e.g. Stripe, Databricks, Airbnb, Datadog"></div>
     <button class="go" id="go">Check openings</button>
   </div>
@@ -113,10 +113,13 @@ function fallbackCard(name, role) {
 
 async function run() {
   const role = $("role").value.trim().toLowerCase();
-  const emps = $("emps").value.split(",").map(s => s.trim()).filter(Boolean).slice(0, 10);
+  const emps = $("emps").value.split(",").map(s => s.trim()).filter(Boolean);
   const cards = $("cards");
   cards.innerHTML = "";
   if (!emps.length) { cards.innerHTML = '<p class="spin">add at least one employer above</p>'; return; }
+  const prog = document.createElement("p"); prog.className = "spin";
+  prog.textContent = `checking ${emps.length} employer(s)\u2026`;
+  cards.before(prog);
   for (const name of emps) {
     const el = document.createElement("div");
     el.innerHTML = `<div class="card"><h3>${name}</h3><div class="spin">checking live board&hellip;</div></div>`;
@@ -134,6 +137,7 @@ async function run() {
         </ul></div>`;
     } catch (e) { el.innerHTML = fallbackCard(name, role || "jobs"); }
   }
+  prog.remove();
 }
 
 $("go").onclick = run;

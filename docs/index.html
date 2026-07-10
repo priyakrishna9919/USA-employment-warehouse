@@ -364,7 +364,7 @@ async function refresh() {
   $("kEmployers").textContent = fmt(k.emps);
 
   const emp = await rows(`SELECT employer_name e, COUNT(*) n FROM sponsorships ${where}
-                          GROUP BY 1 ORDER BY n DESC LIMIT 10`);
+                          GROUP BY 1 ORDER BY n DESC LIMIT 50`);
   drawChart("cEmployers", "bar", emp.map(r => r.e.length > 26 ? r.e.slice(0,25) + "…" : r.e),
             emp.map(r => Number(r.n)), { horizontal: true });
 
@@ -500,7 +500,7 @@ function wireEvents() {
   $("openRoles").onclick = async (ev) => {
     ev.preventDefault();
     const top = await rows(`SELECT employer_name e, COUNT(*) n FROM sponsorships ${whereClause()}
-                            GROUP BY 1 ORDER BY n DESC LIMIT 10`);
+                            GROUP BY 1 ORDER BY n DESC LIMIT 50`);
     const q = new URLSearchParams();
     if ($("fTitle").value.trim()) q.set("role", $("fTitle").value.trim().toLowerCase());
     if (top.length) q.set("employers", top.map(r => r.e).join("|"));
