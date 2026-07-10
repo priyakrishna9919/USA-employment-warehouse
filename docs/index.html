@@ -179,7 +179,7 @@
         </div>
       </div>
       <div class="card wide console">
-        <h2>SQL console &mdash; table: <span class="mono">sponsorships</span></h2>
+        <h2>SQL console &mdash; tables: <span class="mono" id="consoleTables">sponsorships</span></h2>
         <textarea id="sqlIn" spellcheck="false">SELECT employer_name, COUNT(*) AS filings, ROUND(MEDIAN(annual_wage)) AS median_wage
 FROM sponsorships
 WHERE job_category = 'AI/ML'
@@ -218,6 +218,14 @@ async function init() {
   await db.registerFileBuffer("sponsorships.parquet", buf);
   conn = await db.connect();
   await conn.query(`CREATE VIEW sponsorships AS SELECT * FROM read_parquet('sponsorships.parquet')`);
+  try {  // green-card (PERM) data is optional - present once PERM files are loaded
+    const pr = await fetch(new URL("data/perm.parquet", location.href).href);
+    if (pr.ok) {
+      await db.registerFileBuffer("perm.parquet", new Uint8Array(await pr.arrayBuffer()));
+      await conn.query(`CREATE VIEW green_cards AS SELECT * FROM read_parquet('perm.parquet')`);
+      document.getElementById("consoleTables").textContent = "sponsorships, green_cards";
+    }
+  } catch (e) { console.log("no PERM data yet"); }
 
   await populateFilters();
   wireEvents();

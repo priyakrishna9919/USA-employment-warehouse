@@ -73,8 +73,30 @@ NEEDED_COLS = {
 }
 
 
-def read_raw(path: Path) -> pd.DataFrame:
-    keep = lambda c: str(c).strip().upper() in NEEDED_COLS  # noqa: E731
+# PERM files (both old and revised ETA-9089 formats) use varying column names;
+# each field lists candidates checked in order.
+PERM_CANDIDATES = {
+    "case_number": ["CASE_NUMBER", "CASE_NO"],
+    "case_status": ["CASE_STATUS"],
+    "received": ["RECEIVED_DATE", "CASE_RECEIVED_DATE"],
+    "decision": ["DECISION_DATE"],
+    "job_title": ["JOB_TITLE", "JOB_TITLE_9089", "PW_JOB_TITLE_9089"],
+    "soc_code": ["PW_SOC_CODE", "SOC_CODE", "PW_SOC_CODE_9089"],
+    "soc_title": ["PW_SOC_TITLE", "SOC_TITLE", "PW_SOC_TITLE_9089"],
+    "employer": ["EMPLOYER_NAME", "EMPLOYER_NAME_9089"],
+    "ws_city": ["WORKSITE_CITY", "PRIMARY_WORKSITE_CITY", "JOB_INFO_WORK_CITY", "WORKSITE_CITY_9089"],
+    "ws_state": ["WORKSITE_STATE", "PRIMARY_WORKSITE_STATE", "JOB_INFO_WORK_STATE", "WORKSITE_STATE_9089"],
+    "ws_postal": ["WORKSITE_POSTAL_CODE", "PRIMARY_WORKSITE_POSTAL_CODE", "JOB_INFO_WORK_POSTAL_CODE"],
+    "wage": ["WAGE_OFFER_FROM", "WAGE_OFFER_FROM_9089", "WAGE_OFFERED_FROM_9089", "OFFERED_WAGE"],
+    "wage_unit": ["WAGE_OFFER_UNIT_OF_PAY", "WAGE_OFFER_UNIT_OF_PAY_9089",
+                  "WAGE_OFFERED_UNIT_OF_PAY_9089", "OFFERED_WAGE_UNIT"],
+}
+PERM_COLS = {c for cands in PERM_CANDIDATES.values() for c in cands}
+
+
+def read_raw(path: Path, needed: set | None = None) -> pd.DataFrame:
+    needed = needed or NEEDED_COLS
+    keep = lambda c: str(c).strip().upper() in needed  # noqa: E731
     if path.suffix.lower() in {".xlsx", ".xls"}:
         try:  # calamine: much faster / lighter on 200MB+ government files
             df = pd.read_excel(path, dtype=str, engine="calamine", usecols=keep)
@@ -183,6 +205,81 @@ def load_file(con: duckdb.DuckDBPyConnection, path: Path) -> int:
         raise
 
 
+def transform_perm(df: pd.DataFrame, source_file: str) -> pd.DataFrame:
+    def col(field: str) -> pd.Series:
+        for cand in PERM_CANDIDATES[field]:
+            if cand in df.columns:
+                return df[cand]
+        return pd.Series([None] * len(df))
+
+    out = pd.DataFrame({
+        "case_number": col("case_number"),
+        "case_status": col("case_status"),
+        "received_date": pd.to_datetime(col("received"), errors="coerce").dt.date,
+        "decision_date": pd.to_datetime(col("decision"), errors="coerce").dt.date,
+        "job_title": col("job_title").astype(str).str.strip().str.upper(),
+        "soc_code": col("soc_code").astype(str).str.strip(),
+        "soc_title": col("soc_title").astype(str).str.strip(),
+        "employer_name": col("employer").astype(str).str.strip(),
+        "worksite_city": col("ws_city").astype(str).str.strip().str.upper(),
+        "worksite_state": col("ws_state").astype(str).str.strip().str.upper(),
+        "worksite_postal_code": col("ws_postal").astype(str).str.strip(),
+    })
+    out["annual_wage"] = [annualize(w, u) for w, u in zip(col("wage"), col("wage_unit"))]
+    out["employer_name_clean"] = out["employer_name"].map(clean_employer)
+    out["is_university"] = out["employer_name_clean"].str.contains(_UNIV, regex=True, na=False)
+    out["job_category"] = [job_category(t, s) for t, s in zip(out["job_title"], out["soc_title"])]
+    rd = pd.to_datetime(out["received_date"], errors="coerce")
+    out["fiscal_year"] = (rd.dt.year + (rd.dt.month >= 10).astype(int)).astype("Int64")
+    out["source_file"] = source_file
+    out = out.dropna(subset=["case_number", "employer_name"])
+    out = out[out["case_number"].astype(str).str.len() > 5]
+    return out.drop_duplicates(subset=["case_number"], keep="last")
+
+
+def load_perm_file(con: duckdb.DuckDBPyConnection, path: Path) -> int:
+    run_id = str(uuid.uuid4())
+    started = datetime.now()
+    try:
+        staged = transform_perm(read_raw(path, PERM_COLS), path.name)
+        con.register("staged_perm", staged)
+        con.execute("""
+            INSERT INTO employers (employer_name, employer_name_clean, is_university, first_seen_date)
+            SELECT any_value(employer_name), employer_name_clean, any_value(is_university), min(received_date)
+            FROM staged_perm GROUP BY employer_name_clean
+            ON CONFLICT (employer_name_clean) DO NOTHING""")
+        con.execute("""
+            INSERT INTO locations (city, state, postal_code)
+            SELECT DISTINCT worksite_city, worksite_state, worksite_postal_code FROM staged_perm
+            ON CONFLICT DO NOTHING""")
+        con.execute("""
+            INSERT INTO occupations (soc_code, soc_title, job_category)
+            SELECT soc_code, any_value(soc_title), any_value(job_category)
+            FROM staged_perm GROUP BY soc_code
+            ON CONFLICT (soc_code) DO NOTHING""")
+        con.execute("""
+            INSERT OR REPLACE INTO perm_filings (
+                case_number, case_status, received_date, decision_date, fiscal_year,
+                employer_id, worksite_location_id, occupation_id, job_title, annual_wage, source_file)
+            SELECT s.case_number, s.case_status, s.received_date, s.decision_date, s.fiscal_year,
+                   e.employer_id, l.location_id, o.occupation_id, s.job_title, s.annual_wage, s.source_file
+            FROM staged_perm s
+            JOIN employers e ON e.employer_name_clean = s.employer_name_clean
+            LEFT JOIN locations l ON l.city = s.worksite_city
+                 AND l.state = s.worksite_state AND l.postal_code = s.worksite_postal_code
+            LEFT JOIN occupations o ON o.soc_code = s.soc_code""")
+        n = len(staged)
+        con.execute("INSERT INTO etl_runs VALUES (?, 'perm', ?, ?, ?, ?, 'success', NULL)",
+                    [run_id, path.name, started, datetime.now(), n])
+        print(f"  loaded {n:,} PERM rows from {path.name}")
+        return n
+    except Exception as exc:  # noqa: BLE001
+        con.execute("INSERT INTO etl_runs VALUES (?, 'perm', ?, ?, ?, 0, 'failed', ?)",
+                    [run_id, path.name, started, datetime.now(), str(exc)])
+        print(f"  FAILED {path.name}: {exc}")
+        raise
+
+
 def get_connection() -> duckdb.DuckDBPyConnection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
@@ -201,7 +298,9 @@ def main() -> None:
         print("No raw files found. Run `python -m etl.sample_data` or `python -m etl.download` first.")
         return
     total = sum(load_file(con, f) for f in files if f.suffix.lower() in {".csv", ".xlsx", ".xls"})
-    print(f"Done. {total:,} rows processed -> {DB_PATH}")
+    perm_dir = ROOT / "data" / "raw" / "perm"
+    perm_total = sum(load_perm_file(con, f) for f in sorted(perm_dir.glob("*.xlsx")) if perm_dir.exists())
+    print(f"Done. {total:,} LCA + {perm_total:,} PERM rows processed -> {DB_PATH}")
 
 
 if __name__ == "__main__":

@@ -119,3 +119,13 @@ SELECT e.employer_name, f.fiscal_year,
 FROM lca_filings f
 JOIN employers e ON f.employer_id = e.employer_id
 GROUP BY 1, 2;
+
+CREATE OR REPLACE VIEW v_perm AS
+SELECT f.case_number, f.case_status, f.fiscal_year, f.job_title, f.annual_wage,
+       e.employer_name, e.is_university,
+       o.soc_code, o.soc_title, o.job_category,
+       l.city AS worksite_city, l.state AS worksite_state
+FROM perm_filings f
+JOIN employers e   ON f.employer_id = e.employer_id
+LEFT JOIN occupations o ON f.occupation_id = o.occupation_id
+LEFT JOIN locations l   ON f.worksite_location_id = l.location_id;

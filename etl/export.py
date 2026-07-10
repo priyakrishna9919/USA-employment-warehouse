@@ -31,6 +31,11 @@ def main() -> None:
     """)
     n = con.execute("SELECT COUNT(*) FROM v_sponsorships").fetchone()[0]
     print(f"exported {n:,} rows -> {OUT} ({OUT.stat().st_size / 1e6:.2f} MB)")
+    perm_n = con.execute("SELECT COUNT(*) FROM perm_filings").fetchone()[0]
+    if perm_n:
+        perm_out = OUT.parent / "perm.parquet"
+        con.execute(f"COPY (SELECT * FROM v_perm) TO '{perm_out.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD)")
+        print(f"exported {perm_n:,} PERM rows -> {perm_out}")
 
 
 if __name__ == "__main__":
