@@ -16,8 +16,8 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Download DOL disclosure files (config names + discovered links)
         run: |
+          python -m etl.download --release || true
           python -m etl.download --only lca || true
-          python -m etl.download --discover || true
       - name: Require at least one downloaded file
         run: |
           ls -lh data/raw/lca/ || true

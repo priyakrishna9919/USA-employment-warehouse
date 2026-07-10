@@ -87,15 +87,45 @@ def download_file(url: str, dest: Path, chunk: int = 1 << 20, min_mb: float = 2.
     return False
 
 
+REPO = "priyakrishna9919/USA-employment-warehouse"
+
+
+def download_release_assets() -> int:
+    """Download every .xlsx asset attached to the 'data-drop' release.
+    Routes files containing PERM to data/raw/perm, everything else to lca.
+    Returns count downloaded. Names don't need to match config."""
+    api = f"https://api.github.com/repos/{REPO}/releases/tags/data-drop"
+    try:
+        assets = requests.get(api, timeout=30).json().get("assets", [])
+    except Exception as exc:  # noqa: BLE001
+        print(f"release lookup failed: {exc}", file=sys.stderr)
+        return 0
+    n = 0
+    for a in assets:
+        name = a["name"]
+        if not name.lower().endswith(".xlsx"):
+            continue
+        sub = "perm" if "PERM" in name.upper() else "lca"
+        if download_file(a["browser_download_url"], RAW / sub / name):
+            n += 1
+    print(f"[release] downloaded {n} asset(s) from data-drop")
+    return n
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--only", choices=["lca", "perm"], default=None)
+    parser.add_argument("--release", action="store_true",
+                        help="download all xlsx assets from the data-drop GitHub release")
     parser.add_argument("--discover", action="store_true",
                         help="scrape dol.gov for current LCA file links instead of using config names")
     parser.add_argument("--min-fy", type=int, default=2025)
     args = parser.parse_args()
 
     failures = 0
+    if args.release:
+        n = download_release_assets()
+        sys.exit(0 if n else 1)
     if args.discover:
         try:
             urls = discover_lca_urls(args.min_fy)
